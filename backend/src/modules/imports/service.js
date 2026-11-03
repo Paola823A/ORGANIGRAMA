@@ -93,7 +93,7 @@ export function importService(db) {
       );
     })();
   }
-  function preview(buffer, filename) {
+  function preview(buffer, filename, context = {}) {
     for (const [id, p] of previews)
       if (p.expires < Date.now()) previews.delete(id);
     assert(
@@ -113,8 +113,20 @@ export function importService(db) {
       );
       throw error;
     }
+    let scope = null;
+    if (context.companyIds) {
+      const allowed = db.prepare('SELECT id,normalized_name FROM companies').all().filter(c=>context.companyIds.includes(c.id));
+      const names = new Set(allowed.map(c=>c.normalized_name));
+      const records = parsed.records.filter(r=>names.has(normalize(r.company)));
+      assert(records.length,'El archivo no contiene personal de las empresas que tienes autorizadas.',403);
+      const present = new Set(records.map(r=>normalize(r.company)));
+      scope = allowed.filter(c=>present.has(c.normalized_name)).map(c=>c.id);
+      const activeRows = new Set(records.filter(r=>r.status==='ACTIVE').map(r=>r.row));
+      parsed = { ...parsed, records:records.map(r=>r.hierarchyStatus==='RESOLVED' && !activeRows.has(r.supervisorRow) ? {...r,hierarchyStatus:'MISSING',supervisorRow:undefined} : r),
+        issues:parsed.issues.filter(i=>records.some(r=>r.sheet===i.sheet && r.row===i.row)) };
+    }
     const token = randomUUID(),
-      old = existing();
+      old = existing().filter(e=>!scope || scope.includes(e.company_id));
     const records = matchRecords(parsed.records, old);
     const matched = new Set(records.map((r) => r.id));
     const summary = {
@@ -145,6 +157,8 @@ export function importService(db) {
       filename,
       summary,
       repeated,
+      scope,
+      actor:context.userId || null,
       baseline: latest(),
       expires: Date.now() + 30 * 60 * 1000,
     };
@@ -160,19 +174,22 @@ export function importService(db) {
       structures: parsed.structures,
       records,
       issues: parsed.issues,
+      scoped: !!scope,
     };
   }
   function confirm({
     token,
     allowRepeated = false,
     preserveConflicts = false,
-  } = {}) {
+  } = {}, context = {}) {
     const p = previews.get(token);
     assert(
       p && p.expires > Date.now(),
       "La vista previa venció. Selecciona el archivo nuevamente.",
       410,
     );
+    assert(p.actor === (context.userId || null), 'Esta vista previa pertenece a otro usuario.',403);
+    assert(!context.companyIds || p.scope && p.scope.every(id=>context.companyIds.includes(id)), 'Ya no tienes permisos para confirmar esta carga.',403);
     assert(
       !p.repeated || allowRepeated === true,
       "Confirma expresamente que deseas repetir esta importación.",
@@ -201,6 +218,7 @@ export function importService(db) {
           p.issues.length,
           JSON.stringify(p.summary),
         );
+        db.prepare('UPDATE import_batches SET actor_user_id=?,scope_json=? WHERE id=?').run(p.actor,p.scope ? JSON.stringify(p.scope):null,id);
         const companyMap = new Map(
           db
             .prepare("SELECT * FROM companies")
@@ -231,11 +249,13 @@ export function importService(db) {
             importId: id,
           });
         }
+        const scopeWhere = p.scope ? ` AND company_id IN (${p.scope.map(()=>'?').join(',')})` : '';
         db.prepare(
-          "UPDATE employees SET employment_status='ABSENT',updated_at=CURRENT_TIMESTAMP WHERE employment_status='ACTIVE' AND last_seen_import_id<>?",
-        ).run(id);
+          "UPDATE employees SET employment_status='ABSENT',updated_at=CURRENT_TIMESTAMP WHERE employment_status='ACTIVE' AND last_seen_import_id<>?" + scopeWhere,
+        ).run(id,...(p.scope || []));
         // This table is only changed by a confirmed import, never by visual operations.
-        db.prepare("DELETE FROM employee_hierarchy").run();
+        if (p.scope) db.prepare(`DELETE FROM employee_hierarchy WHERE employee_id IN (SELECT id FROM employees WHERE company_id IN (${p.scope.map(()=>'?').join(',')}))`).run(...p.scope);
+        else db.prepare("DELETE FROM employee_hierarchy").run();
         const activeByRow = new Map(
           p.records
             .filter((r) => r.status === "ACTIVE")
@@ -283,20 +303,26 @@ export function importService(db) {
   return {
     preview,
     confirm,
-    history: () =>
+    history: (context) =>
       db
         .prepare("SELECT * FROM import_batches ORDER BY rowid DESC LIMIT 100")
         .all()
+        .filter(b=>!context || b.actor_user_id===context.userId && b.scope_json && JSON.parse(b.scope_json).every(id=>context.companyIds.includes(id)))
         .map((b) => ({
           ...b,
           summary: JSON.parse(b.summary_json),
           summary_json: undefined,
         })),
-    issues: (id) =>
-      db
+    issues: (id,context) => {
+      if(context) {
+        const batch = db.prepare('SELECT * FROM import_batches WHERE id=?').get(id);
+        assert(batch && batch.actor_user_id===context.userId && batch.scope_json && JSON.parse(batch.scope_json).every(id=>context.companyIds.includes(id)), 'No tienes acceso a esta importación.',403);
+      }
+      return db
         .prepare(
           "SELECT * FROM import_issues WHERE import_batch_id=? ORDER BY id",
         )
-        .all(id),
+        .all(id);
+    },
   };
 }

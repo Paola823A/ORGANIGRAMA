@@ -12,7 +12,8 @@ export function graphBounds(nodes) {
     ),
   };
 }
-export function pdfGeometry(nodes, bounds) {
+export function pdfGeometry(nodes, bounds, singlePage = false) {
+  if (singlePage) return {tileWidth:bounds.width,tileHeight:bounds.height,stepX:bounds.width,stepY:bounds.height,cols:1,rows:1};
   const maxWidth = Math.max(...nodes.map((n) => n.width));
   const maxHeight = Math.max(...nodes.map((n) => n.height));
   const tileWidth = Math.max(1500, maxWidth + 80);

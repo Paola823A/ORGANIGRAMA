@@ -31,6 +31,7 @@ export function chartRoutes(service) {
   router.get("/charts/:id/versions/:versionId", (req, res) =>
     res.json(service.getVersion(req.params.id, req.params.versionId)),
   );
+  router.delete('/charts/:id/versions/:versionId',(req,res)=>res.json(service.removeVersion(req.params.id,req.params.versionId)));
   router.post("/charts/:id/versions/:versionId/create-draft", (req, res) =>
     res
       .status(201)

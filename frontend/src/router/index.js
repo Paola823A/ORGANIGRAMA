@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from "vue-router";
 export default createRouter({
   history: createWebHistory(),
   routes: [
+    { path: '/users', component: () => import('../modules/users/UsersView.vue'), meta: {title:'Usuarios y permisos',description:'Administra los accesos por empresa y módulo'} },
     { path: "/", redirect: "/graphic" },
     {
       path: "/graphic",

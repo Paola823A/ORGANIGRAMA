@@ -16,8 +16,11 @@ import { graphAncestors, normalize, visibleGraph } from "../../../../shared/grap
 import GraphCanvas from "../../components/GraphCanvas.vue";
 import NodeProperties from "../../components/NodeProperties.vue";
 import { editorShortcut } from "../../services/editorShortcuts.js";
-import { applyBrandTheme, AUTRISA_BLUE } from "../../../../shared/theme.js";
+import { applyBrandTheme, companyTheme } from "../../../../shared/theme.js";
 import { restoreCompactedPoint } from "../../services/compactLayout.js";
+import { exportGraph } from "../../services/export.js";
+import { selectedGraph } from "../../services/exportSelection.js";
+const exportingSelection = ref(false), exportProgress = ref('');
 const { companies, companyId } = useCompanies(),
   editor = useEditor();
 const { graph, selectedId, selectedIds, edgeId, selected, past, future } = editor;
@@ -74,6 +77,7 @@ function locateEmployee(node) {
 const company = computed(() =>
   companies.value.find((c) => c.id === companyId.value),
 );
+const brand = computed(()=>companyTheme(company.value?.name));
 const chartId = computed(() => company.value?.chart_id);
 const dirty = computed(
   () =>
@@ -86,6 +90,19 @@ const collapsed = computed(
 const displayed = computed(() =>
   visibleGraph(reflowVisibleGraph(graph.value, {}, collapsed.value), {}, collapsed.value),
 );
+const pdfSelection = computed(()=>selectedGraph(displayed.value,selectedIds.value));
+async function downloadSelection() {
+  if(exportingSelection.value || !pdfSelection.value.nodes.length) return;
+  const selection = JSON.parse(JSON.stringify(pdfSelection.value));
+  exportingSelection.value=true;exportProgress.value='Preparando PDF…';error.value='';
+  try {
+    await exportGraph(selection,{format:'pdf',singlePage:true,company:company.value?.name || 'Organigrama',version:'Board_seleccion',
+      hierarchy:graph.value,collapsed:collapsed.value,
+      onProgress:(page,total)=>exportProgress.value=`Exportando página ${page} de ${total}…`});
+    notice.value='PDF de la selección generado.';
+  } catch(e) {error.value=`No se pudo exportar la selección. ${e.message}`;}
+  finally {exportingSelection.value=false;exportProgress.value='';}
+}
 function attempt(fn) {
   error.value = "";
   try {
@@ -218,7 +235,7 @@ async function openDraft(id, guard = true, event = null) {
     if (key !== draftLoadRequest || currentChart !== chartId.value) return;
     draft.value = value;
     savedName.value = value.name;
-    editor.load(applyBrandTheme(value));
+    editor.load(applyBrandTheme(value,company.value?.name));
     await nextTick();
     canvas.value?.initialView();
   } catch (e) {
@@ -251,7 +268,7 @@ async function createDraft() {
     if (value.chart_id !== chartId.value) return;
     draft.value = value;
     savedName.value = value.name;
-    editor.load(applyBrandTheme(value));
+    editor.load(applyBrandTheme(value,company.value?.name));
     if (creatingMode === "master") editor.commit(autoLayout(graph.value));
     dialog.value = "";
     await refreshLists();
@@ -332,15 +349,15 @@ function addManual(grouping = false) {
     height: grouping ? 60 : 110,
     style: {
       backgroundColor: grouping ? "#fbfcfd" : "#f3f3fa",
-      textColor: grouping ? AUTRISA_BLUE : "#243247",
-      borderColor: AUTRISA_BLUE,
+      textColor: grouping ? brand.value.color : "#243247",
+      borderColor: brand.value.color,
       borderStyle: "solid",
       ...(grouping ? { textAlign: "center" } : {}),
     },
     collapsed: false,
     siblingOrder: graph.value.nodes.length,
     metadata: {
-      autrisaTheme: 1,
+      autrisaTheme: 1, brandTheme: brand.value.key,
       company: company.value?.name || "",
       businessLine: "",
       branch: "",
@@ -389,7 +406,7 @@ function addEmployee(e) {
     style: {
       backgroundColor: "#ffffff",
       textColor: "#243247",
-      borderColor: AUTRISA_BLUE,
+      borderColor: brand.value.color,
       borderStyle: e.employment_status === "CEASED" ? "dashed" : "solid",
     },
     collapsed: false,
@@ -401,7 +418,7 @@ function addEmployee(e) {
       area: e.area,
       dni: e.dni,
       employmentStatus: e.employment_status,
-      autrisaTheme: 1,
+      autrisaTheme: 1, brandTheme: brand.value.key,
       hierarchyStatus: e.hierarchy_status || "EMPTY",
     },
   };
@@ -598,6 +615,8 @@ function applySync() {
         >
           ↷</button
         ><button @click="openSync" :disabled="busy">Sincronizar datos</button>
+        <button @click="downloadSelection" :disabled="exportingSelection || !pdfSelection.nodes.length" title="Selecciona tarjetas con Ctrl + clic o con la selección rectangular y descarga su PDF">{{ exportingSelection ? 'Generando PDF…' : `Descargar selección PDF (${pdfSelection.nodes.length})` }}</button>
+        <span v-if="exportProgress" role="status" aria-live="polite">{{ exportProgress }}</span>
       </div>
       <div class="editor-workspace">
         <GraphCanvas
@@ -615,7 +634,7 @@ function applySync() {
           @move-many="moveMany"
           @toggle="toggle"
           @split-edge="splitVisibleEdge"
-          @connect="(c) => attempt(() => editor.connect(c))"
+          @connect="(c) => attempt(() => editor.connect(c,null,{color:brand.value.color,brandTheme:brand.value.key}))"
           @reconnect="
             (v) => attempt(() => editor.connect(v.connection, v.edge.id))
           "

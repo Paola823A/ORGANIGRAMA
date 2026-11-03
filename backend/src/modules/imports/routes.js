@@ -19,14 +19,14 @@ export function importRoutes(service) {
     });
   router.post("/preview", upload.single("file"), (req, res) => {
     assert(req.file, "Selecciona un archivo XLSM.");
-    res.json(service.preview(req.file.buffer, req.file.originalname));
+    res.json(service.preview(req.file.buffer, req.file.originalname, req.importScope || {userId:req.user?.id}));
   });
   router.post("/confirm", (req, res) =>
-    res.status(201).json(service.confirm(req.body)),
+    res.status(201).json(service.confirm(req.body,req.importScope || {userId:req.user?.id})),
   );
-  router.get("/", (_req, res) => res.json(service.history()));
+  router.get("/", (req, res) => res.json(service.history(req.importScope)));
   router.get("/:id/issues", (req, res) =>
-    res.json(service.issues(req.params.id)),
+    res.json(service.issues(req.params.id,req.importScope)),
   );
   return router;
 }

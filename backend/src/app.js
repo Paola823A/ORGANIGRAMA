@@ -8,6 +8,9 @@ import { chartService } from "./modules/charts/service.js";
 import { chartRoutes } from "./modules/charts/routes.js";
 import { employeeRepository } from "./modules/employees/repository.js";
 import { employeeRoutes } from "./modules/employees/routes.js";
+import { authService } from "./modules/auth/service.js";
+import { authRoutes } from "./modules/auth/routes.js";
+import { identify, accessControl, localRequest } from "./modules/auth/access.js";
 export function createApp(db) {
   const app = express();
   app.disable("x-powered-by");
@@ -45,6 +48,10 @@ export function createApp(db) {
       foreignKeys: db.pragma("foreign_keys", { simple: true }) === 1,
     }),
   );
+  const auth = authService(db);
+  app.use("/api/v1", identify(auth));
+  app.use("/api/v1/auth", authRoutes(auth, localRequest));
+  app.use("/api/v1", accessControl(db, auth));
   app.use("/api/v1/imports", importRoutes(importService(db)));
   app.use(
     "/api/v1",

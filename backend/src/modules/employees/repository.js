@@ -6,6 +6,10 @@ export function employeeRepository(db) {
     list(query = {}) {
       const conditions = [],
         params = [];
+      if (query.allowedCompanies) {
+        conditions.push(`e.company_id IN (${query.allowedCompanies.map(() => '?').join(',') || 'NULL'})`);
+        params.push(...query.allowedCompanies);
+      }
       for (const [key, column] of [
         ["companyId", "e.company_id"],
         ["status", "e.employment_status"],

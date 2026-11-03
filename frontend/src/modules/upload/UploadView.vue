@@ -2,6 +2,8 @@
 import { computed, onMounted, ref } from "vue";
 import { api } from "../../services/api.js";
 import { useCompanies } from "../../composables/useCompanies.js";
+import { useAuth } from "../../composables/useAuth.js";
+const { user,localMode } = useAuth();
 const { refreshCompanies } = useCompanies();
 const preview = ref(null),
   history = ref([]),
@@ -105,6 +107,7 @@ function date(value) {
       <strong>Error bloqueante.</strong> {{ error }}
     </div>
     <div class="alert success" v-if="notice" role="status">{{ notice }}</div>
+    <p v-if="!localMode && user?.role !== 'OWNER'">Solo se importará el personal de las empresas para las que el creador te autorizó Upload. Las demás empresas del archivo no se modificarán.</p>
     <label class="upload-zone" :class="{ disabled: busy }"
       ><span class="upload-symbol">↥</span
       ><strong>{{

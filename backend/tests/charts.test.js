@@ -12,6 +12,7 @@ function setup(legacy = false) {
   if (legacy) {
     db.pragma("foreign_keys = ON");
     db.exec(readFileSync(new URL("../migrations/001_initial.sql", import.meta.url), "utf8"));
+    for (const migration of ['003_users_permissions.sql','004_delegated_upload.sql','005_simplify_users.sql','006_permanent_passwords.sql','007_remove_published_versions.sql']) db.exec(readFileSync(new URL(`../migrations/${migration}`, import.meta.url),'utf8'));
   }
   const
     imports = importService(db);
@@ -241,6 +242,23 @@ test("persistencia: uniones, anclajes laterales y formato sobreviven guardado y 
     assert.equal(version.snapshot.nodes.find((n) => n.type === "JUNCTION").width, 16);
     assert.equal(version.snapshot.nodes.find((n) => n.id === "card").style.strikethrough, true);
   } finally { db.close(); }
+});
+test('versiones pasadas: se retiran sin borrar borradores ni reutilizar números; se protege la última',()=>{
+  const {db,charts,chartId}=setup();
+  try {
+    const draft=charts.createDraft(chartId,{mode:'master'});
+    const first=charts.publish(draft.id,{content_revision:0});
+    const copy=charts.createDraft(chartId,{mode:'version',versionId:first.id});
+    const saved=charts.getDraft(copy.id);
+    const second=charts.publish(draft.id,{content_revision:0});
+    assert.throws(()=>charts.removeVersion(chartId,second.id),/más reciente/);
+    charts.removeVersion(chartId,first.id);
+    assert.deepEqual(charts.versions(chartId).map(v=>v.id),[second.id]);
+    assert.throws(()=>charts.getVersion(chartId,first.id),/no encontrada/);
+    assert.deepEqual(charts.getDraft(copy.id),saved);
+    assert.equal(charts.publish(draft.id,{content_revision:0}).version_number,3);
+    assert.deepEqual(db.pragma('foreign_key_check'),[]);
+  }finally{db.close();}
 });
 test("versiones: snapshots inmutables, nueva base independiente y numeración por empresa", () => {
   const { db, charts, chartId, imports } = setup();

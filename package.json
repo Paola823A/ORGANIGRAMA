@@ -10,6 +10,7 @@
     "node": ">=22.12"
   },
   "scripts": {
+    "create-owner": "node scripts/create-owner.js",
     "dev": "node scripts/dev.js",
     "build": "npm run build --workspace frontend",
     "start": "node backend/src/server.js",

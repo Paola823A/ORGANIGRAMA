@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onBeforeUnmount, ref } from "vue";
 import { useRoute } from "vue-router";
 import { useCompanies } from "./composables/useCompanies.js";
 import autrisaLogo from "./assets/companies/autrisa.png";
@@ -7,6 +7,12 @@ import incamotorsLogo from "./assets/companies/incamotors.png";
 import novaAutosLogo from "./assets/companies/nova-autos.png";
 import grupoAinLogo from "./assets/companies/grupo-ain.png";
 import { normalize } from "../../shared/graph.js";
+import { companyTheme } from "../../shared/theme.js";
+import { useAuth } from "./composables/useAuth.js";
+import { api } from "./services/api.js";
+import LoginPanel from "./components/LoginPanel.vue";
+const { ready,user,localMode,enabled,refresh,can } = useAuth();
+const passwordOpen = ref(false);
 const route = useRoute(),
   { companies, companyId, refreshCompanies } = useCompanies(),
   error = ref(""),
@@ -20,6 +26,7 @@ const companyLogo = computed(() => {
   const logos = { autrisa: autrisaLogo, incamotors: incamotorsLogo, "nova-autos": novaAutosLogo };
   return brand ? { src: logos[brand], name: company.name, brand } : null;
 });
+const brandStyle = computed(()=>{const theme=companyTheme(companies.value.find(c=>c.id===companyId.value)?.name);return {'--accent':theme.accent,'--accent-hover':theme.hover,'--brand-color':theme.color,'--brand-soft':theme.soft};});
 async function loadCompanies() {
   error.value = "";
   try {
@@ -28,10 +35,22 @@ async function loadCompanies() {
     error.value = e.message;
   }
 }
-onMounted(loadCompanies);
+async function initialize() {
+  try { await refresh(); if (localMode.value || user.value && !user.value.mustChangePassword) await loadCompanies(); }
+  catch(e) { error.value = e.message; }
+}
+async function signedIn() { passwordOpen.value = false;await initialize(); }
+async function logout() { await api('/auth/logout',{method:'POST'});window.location.reload(); }
+const allowed = computed(() => route.path === '/users' ? localMode.value || user.value?.role === 'OWNER'
+  : route.path === '/upload' ? can('upload',companyId.value)
+  : can(route.path === '/canva' ? 'board':'graphic',companyId.value));
+onMounted(() => { initialize();window.addEventListener('ain-auth-expired',initialize); });
+onBeforeUnmount(() => window.removeEventListener('ain-auth-expired',initialize));
 </script>
 <template>
-  <div class="app-shell" :class="{ 'sidebar-hidden': sidebarHidden }">
+  <div v-if="!ready" class="login-page"><p>{{ error || 'Cargando…' }}</p><button v-if="error" @click="initialize">Reintentar</button></div>
+  <LoginPanel v-else-if="!localMode && (!user || user.mustChangePassword || passwordOpen)" :unavailable="!enabled" :change-password="!!user && (user.mustChangePassword || passwordOpen)" @done="signedIn" />
+  <div v-else class="app-shell" :class="{ 'sidebar-hidden': sidebarHidden }">
     <aside v-show="!sidebarHidden" id="main-sidebar" class="sidebar">
       <a class="brand" href="/graphic">
         <img class="brand-logo" :src="grupoAinLogo" alt="Grupo AIN" />
@@ -49,22 +68,25 @@ onMounted(loadCompanies);
       </select>
       <div class="workspace-label navigation-label">ORGANIZACIÓN</div>
       <nav aria-label="Navegación principal">
-        <RouterLink to="/graphic"
+        <RouterLink v-if="can('graphic',companyId)" to="/graphic"
           ><span class="nav-icon">▦</span> Organigrama</RouterLink
         >
-        <RouterLink to="/canva"
+        <RouterLink v-if="can('board',companyId)" to="/canva"
           ><span class="nav-icon">◇</span> Board</RouterLink
         >
-        <RouterLink to="/upload"
+        <RouterLink v-if="can('upload',companyId)" to="/upload"
           ><span class="nav-icon">↥</span> Upload</RouterLink
         >
+        <RouterLink v-if="localMode || user?.role === 'OWNER'" to="/users"><span class="nav-icon">♙</span> Usuarios y permisos</RouterLink>
       </nav>
       <div class="sidebar-footer">
         <span class="status-dot"></span>
-        <div>Entorno interno<small>Datos almacenados localmente</small></div>
+        <div>{{ user?.displayName || 'Modo local' }}<small>{{ user?.role === 'OWNER' ? 'Creador' : user ? 'Acceso autorizado' : 'Usuarios sin activar' }}</small>
+          <template v-if="user"><button v-if="user.role === 'OWNER'" @click="passwordOpen=true">Cambiar contraseña</button><button @click="logout">Cerrar sesión</button></template>
+        </div>
       </div>
     </aside>
-    <main class="main-shell">
+    <main class="main-shell" :style="brandStyle">
       <header class="page-header">
         <div class="header-title-group">
         <button class="sidebar-toggle" @click="sidebarHidden = !sidebarHidden"
@@ -87,7 +109,8 @@ onMounted(loadCompanies);
       <div v-if="error" class="alert error" role="alert">
         {{ error }} <button @click="loadCompanies">Reintentar conexión</button>
       </div>
-      <RouterView />
+      <RouterView v-if="allowed" />
+      <section v-else class="users-page"><h2>Sin acceso a este módulo</h2><p>Selecciona una empresa y un módulo autorizados. El creador puede modificar tus permisos.</p></section>
     </main>
   </div>
 </template>

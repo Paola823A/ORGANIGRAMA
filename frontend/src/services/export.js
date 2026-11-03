@@ -2,6 +2,8 @@ import { toJpeg, toPng } from "html-to-image";
 import { getSmoothStepPath } from "@vue-flow/core";
 import { cardTextColor, cardTextStyle, connectionAnchor, groupBaseStyle } from "./cardStyle.js";
 import { cardContent } from "./cardContent.js";
+import { drawVectorGraph } from "./vectorPdf.js";
+import { companyTheme } from "../../../shared/theme.js";
 import { isGroupingNode, subordinateCounts } from "../../../shared/graph.js";
 import {
   graphBounds,
@@ -26,6 +28,9 @@ function textElement(tag, className, text) {
 }
 function exportTile(graph, bounds, showNames, left, top, width, height, teams) {
   const frame = document.createElement("div");
+  frame.style.setProperty('--accent',teams.brand.accent);
+  frame.style.setProperty('--brand-color',teams.brand.color);
+  frame.style.setProperty('--brand-soft',teams.brand.soft);
   Object.assign(frame.style, {
     position: "fixed",
     left: "0",
@@ -152,11 +157,11 @@ function download(dataUrl, filename) {
 }
 export async function exportGraph(
   graph,
-  { format, company, version, showNames = true, onProgress = () => {}, hierarchy = graph, collapsed = new Set() },
+  { format, company, version, showNames = true, onProgress = () => {}, hierarchy = graph, collapsed = new Set(), singlePage = false },
 ) {
   if (!graph.nodes.length)
     throw new Error("No hay tarjetas visibles para exportar.");
-  const teams = { counts: subordinateCounts(hierarchy), parents: new Set(hierarchy.edges.map((edge) => edge.source)), collapsed };
+  const teams = { counts: subordinateCounts(hierarchy), parents: new Set(hierarchy.edges.map((edge) => edge.source)), collapsed,brand:companyTheme(company) };
   const bounds = graphBounds(graph.nodes),
     date = new Date().toLocaleDateString("sv-SE"),
     base = `${company.replace(/[^\p{L}\p{N}-]/gu, "_")}_V${version}_${date}`;
@@ -201,6 +206,7 @@ export async function exportGraph(
   const { tileWidth, tileHeight, stepX, stepY, cols, rows } = pdfGeometry(
     graph.nodes,
     bounds,
+    singlePage,
   );
   if (cols * rows > 200)
     throw new Error(
@@ -213,6 +219,12 @@ export async function exportGraph(
     format: "a3",
     compress: true,
   });
+  if(singlePage) {
+    onProgress(1,1);
+    drawVectorGraph(pdf,graph,bounds,{teams,showNames});
+    pdf.save(`${base}.pdf`);
+    return;
+  }
   for (let row = 0; row < rows; row++)
     for (let col = 0; col < cols; col++) {
       const index = row * cols + col;
@@ -232,6 +244,8 @@ export async function exportGraph(
           teams,
         );
       try {
+        // Limit raster memory while retaining the complete selection on one page.
+        const rasterScale = singlePage ? Math.min(1,8192/Math.max(width,height),Math.sqrt(16e6/(width*height))) : 1;
         const uri = await toJpeg(tile, {
           pixelRatio: 1,
           quality: 0.93,
@@ -239,6 +253,8 @@ export async function exportGraph(
           skipFonts: true,
           width,
           height,
+          canvasWidth:Math.max(1,Math.round(width*rasterScale)),
+          canvasHeight:Math.max(1,Math.round(height*rasterScale)),
           style: { position: "relative", left: "0", top: "0", zIndex: "1" },
         });
         const scale = Math.min(

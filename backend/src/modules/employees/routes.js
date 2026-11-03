@@ -15,9 +15,9 @@ export function employeeRoutes(repository, db) {
     );
   });
   router.get("/employees/ceased", (req, res) =>
-    res.json(repository.list({ ...req.query, status: "CEASED" })),
+    res.json(repository.list({ ...req.query, allowedCompanies: req.allowedEmployeeCompanies, status: "CEASED" })),
   );
-  router.get("/employees", (req, res) => res.json(repository.list(req.query)));
+  router.get("/employees", (req, res) => res.json(repository.list({ ...req.query, allowedCompanies: req.allowedEmployeeCompanies })));
   router.get("/employees/:id", (req, res) => {
     const e = repository.get(req.params.id);
     assert(e, "Empleado no encontrado.", 404);

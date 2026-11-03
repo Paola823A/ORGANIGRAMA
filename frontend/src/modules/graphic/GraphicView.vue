@@ -8,6 +8,8 @@ import { exportGraph } from "../../services/export.js";
 import { reflowVisibleGraph } from "../../services/layout.js";
 import { applyBrandTheme } from "../../../../shared/theme.js";
 import GraphCanvas from "../../components/GraphCanvas.vue";
+import { useAuth } from "../../composables/useAuth.js";
+const { can } = useAuth();
 const { companyId, companies } = useCompanies(),
   router = useRouter(),
   versions = ref([]),
@@ -102,7 +104,7 @@ watch(versionId, async (id) => {
     const value = await api(`/charts/${currentChart}/versions/${id}`);
     if (key !== versionRequest || currentChart !== chartId.value) return;
     version.value = value;
-    graph.value = applyBrandTheme(compactJunctions(value.snapshot));
+    graph.value = applyBrandTheme(compactJunctions(value.snapshot),company.value?.name);
     reset();
     await nextTick();
     canvas.value?.initialView();
@@ -163,6 +165,18 @@ async function download(format) {
     progress.value = "";
   }
 }
+async function deleteVersion() {
+  const selected=version.value,currentChart=chartId.value;
+  if(!selected || selected.id===versions.value[0]?.id || busy.value) return;
+  if(!window.confirm(`¿Eliminar la versión V${selected.version_number}? Los borradores se conservan.`)) return;
+  busy.value=true;error.value='';
+  try {
+    await api(`/charts/${currentChart}/versions/${selected.id}`,{method:'DELETE'});
+    if(chartId.value!==currentChart) return;
+    versions.value=await api(`/charts/${currentChart}/versions`);
+    versionId.value=versions.value[0]?.id || '';
+  } catch(e) {error.value=e.message;} finally{busy.value=false;}
+}
 async function continueEditing() {
   busy.value = true;
   error.value = "";
@@ -207,9 +221,11 @@ function date(value) {
             V{{ v.version_number }} · {{ date(v.published_at) }}
           </option></select
         ><span v-if="version" class="badge success">Solo lectura</span>
+        <button v-if="can('board',companyId)" class="danger" @click="deleteVersion" :disabled="busy || !version || versionId===versions[0]?.id" title="Elimina una versión pasada. Se conserva la más reciente.">Eliminar versión</button>
       </div>
       <div class="toolbar-group">
         <button
+          v-if="can('board',companyId)"
           @click="continueEditing"
           :disabled="!version || busy || exporting"
         >
@@ -329,7 +345,7 @@ function date(value) {
             : "Empieza importando la base de personal de tu organización."
         }}
       </p>
-      <RouterLink :to="chartId ? '/canva' : '/upload'" class="button primary">{{
+      <RouterLink v-if="can(chartId ? 'board' : 'upload',companyId)" :to="chartId ? '/canva' : '/upload'" class="button primary">{{
         chartId ? "Abrir Board" : "Importar base de personal"
       }}</RouterLink>
       <div class="empty-features">

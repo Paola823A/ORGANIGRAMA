@@ -3,7 +3,7 @@ import { chartRepository } from "./repository.js";
 import { employeeRepository } from "../employees/repository.js";
 import { validateGraph } from "../../../../shared/graph.js";
 import { AppError, assert } from "../../utils/errors.js";
-import { AUTRISA_BLUE } from "../../../../shared/theme.js";
+import { AUTRISA_BLUE,applyBrandTheme } from "../../../../shared/theme.js";
 
 export function employeeNode(e, index = 0) {
   return {
@@ -112,6 +112,7 @@ export function chartService(db) {
       graph = version.snapshot;
       base = version.id;
     }
+    graph=applyBrandTheme(graph,chart.company);
     checkGraph(graph);
     db.transaction(() => {
       db.prepare(
@@ -184,7 +185,7 @@ export function chartService(db) {
   }
   function getVersion(chartId, id) {
     const version = db
-      .prepare("SELECT * FROM chart_versions WHERE chart_id=? AND id=?")
+      .prepare("SELECT * FROM chart_versions WHERE chart_id=? AND id=? AND NOT EXISTS (SELECT 1 FROM removed_chart_versions r WHERE r.version_id=chart_versions.id)")
       .get(chartId, id);
     assert(version, "Versión no encontrada.", 404);
     return {
@@ -217,6 +218,15 @@ export function chartService(db) {
       })
       .filter((n) => n.changed);
   }
+  function removeVersion(chartId,id) {
+    db.transaction(()=>{
+      const version=getVersion(chartId,id);
+      const latest=db.prepare('SELECT MAX(version_number) AS n FROM chart_versions WHERE chart_id=? AND NOT EXISTS (SELECT 1 FROM removed_chart_versions r WHERE r.version_id=chart_versions.id)').get(chartId).n;
+      assert(version.version_number<latest,'Conserva la versión más reciente. Solo puedes eliminar versiones pasadas.',409);
+      db.prepare('INSERT INTO removed_chart_versions(version_id) VALUES (?)').run(id);
+    }).immediate();
+    return {ok:true};
+  }
   return {
     getChart,
     getDraft,
@@ -225,6 +235,7 @@ export function chartService(db) {
     publish,
     getVersion,
     syncPreview,
+    removeVersion,
     list: (companyId) =>
       db
         .prepare(
@@ -243,7 +254,7 @@ export function chartService(db) {
       getChart(chartId);
       return db
         .prepare(
-          "SELECT id,chart_id,version_number,source_draft_id,published_at FROM chart_versions WHERE chart_id=? ORDER BY version_number DESC",
+          "SELECT id,chart_id,version_number,source_draft_id,published_at FROM chart_versions WHERE chart_id=? AND NOT EXISTS (SELECT 1 FROM removed_chart_versions r WHERE r.version_id=chart_versions.id) ORDER BY version_number DESC",
         )
         .all(chartId);
     },

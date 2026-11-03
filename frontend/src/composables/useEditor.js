@@ -130,14 +130,14 @@ export function useEditor() {
     selectedIds.value = new Set();
     edgeId.value = null;
   }
-  function connect(connection, replaceId = null) {
+  function connect(connection, replaceId = null, defaults = {}) {
     const previous = graph.value.edges.find((edge) => edge.id === replaceId);
     const edge = {
       id: replaceId || crypto.randomUUID(),
       source: connection.source,
       target: connection.target,
       style: {
-        color: "#94a3b8", width: 1.5, lineType: "solid", ...previous?.style,
+        color: "#94a3b8", width: 1.5, lineType: "solid", ...defaults, ...previous?.style,
         sourceHandle: (connection.sourceHandle || "source-bottom").replace("target-", "source-"),
         targetHandle: (connection.targetHandle || "target-top").replace("source-", "target-"),
       },
