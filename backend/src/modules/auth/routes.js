@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { assert } from '../../utils/errors.js';
+import { config } from '../../config/index.js';
 export function authRoutes(auth, local) {
   const router = Router();
-  const cookie = (res,token) => res.cookie('ain_session',token,{ httpOnly:true,sameSite:'strict',secure:process.env.AUTH_SECURE_COOKIES === 'true',path:'/',maxAge:8*3600000 });
+  const cookie = (res,token) => res.cookie('ain_session',token,{ httpOnly:true,sameSite:'strict',secure:config.secureCookies,path:'/',maxAge:8*3600000 });
   const owner = (req,_res,next) => { assert(req.user?.role === 'OWNER' && !req.user.mustChangePassword,'Solo el creador puede administrar usuarios.',403); next(); };
   router.get('/session',(req,res) => res.json({ enabled:auth.enabled(), localMode:!auth.enabled() && local(req), user:req.user }));
   router.post('/login',async (req,res) => {

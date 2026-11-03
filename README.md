@@ -3,7 +3,7 @@
 Aplicación interna para importar personal desde XLSM, editar organigramas visuales
 y consultar versiones publicadas. Vue 3, Vite, Vue Router, Vue Flow y Dagre en el
 frontend; Express, better-sqlite3 y SheetJS en el backend. JavaScript ES Modules,
-sin autenticación en esta V1.
+con usuarios y permisos por empresa y módulo.
 
 ## Instalación y ejecución
 
@@ -11,6 +11,7 @@ Requiere Node.js LTS 22.12 o posterior; verificado con Node 24.19.0 en Windows.
 
 ```powershell
 npm ci --cache .npm-cache
+Copy-Item .env.example .env
 npm run dev
 ```
 
@@ -27,10 +28,13 @@ npm start
 ```
 
 Abrir **http://127.0.0.1:3001**. Express sirve el frontend compilado y la API.
-Variables admitidas: `HOST`, `PORT`, `DATABASE_PATH`. No se carga `.env`
-automáticamente. Para un servidor interno, configurar estas variables en el
-servicio del sistema y restringir su acceso a la red interna. En producción las
-operaciones de escritura desde navegador requieren el mismo origen.
+Se carga automáticamente el `.env` de la raíz. Las variables definidas por el
+sistema tienen prioridad. `.env.example` contiene las seis variables necesarias:
+`NODE_ENV`, `HOST`, `PORT`, `DATABASE_PATH`, `AUTH_REQUIRED` y `AUTH_SECURE_COOKIES`.
+`DATABASE_PATH` se resuelve desde la raíz del proyecto; el proxy de desarrollo
+usa el mismo host y puerto del backend. `npm run dev` activa el modo de desarrollo.
+Para nube con HTTPS, configura `AUTH_REQUIRED=true` y `AUTH_SECURE_COOKIES=true`
+y crea antes la cuenta del creador (`npm run create-owner`). `.env` no se sube a Git.
 
 La base se crea y migra automáticamente en `data/organigrama.sqlite`. No está
 incluida en Git. El XLSM y las exportaciones tampoco deben incluirse en Git.

@@ -2,7 +2,7 @@ import { config } from '../../config/index.js';
 import { assert } from '../../utils/errors.js';
 const loopbacks = ['127.0.0.1','::1','::ffff:127.0.0.1'];
 export function localRequest(req) {
-  return process.env.AUTH_REQUIRED !== 'true' && ['127.0.0.1','localhost','::1'].includes(config.host)
+  return !config.authRequired && ['127.0.0.1','localhost','::1'].includes(config.host)
     && loopbacks.includes(req.socket.remoteAddress) && ['127.0.0.1','localhost','[::1]'].includes(req.hostname);
 }
 export function identify(auth) {

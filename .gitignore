@@ -6,5 +6,7 @@ data/*
 *.xlsx
 *.log
 .env
+.env.*
+!.env.example
 coverage/
 .npm-cache/
