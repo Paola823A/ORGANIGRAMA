@@ -1,0 +1,251 @@
+import { randomUUID } from "node:crypto";
+import { chartRepository } from "./repository.js";
+import { employeeRepository } from "../employees/repository.js";
+import { validateGraph } from "../../../../shared/graph.js";
+import { AppError, assert } from "../../utils/errors.js";
+import { AUTRISA_BLUE } from "../../../../shared/theme.js";
+
+export function employeeNode(e, index = 0) {
+  return {
+    id: randomUUID(),
+    type: "EMPLOYEE",
+    employeeId: e.id,
+    title: e.full_name,
+    subtitle: e.position_name,
+    position: { x: (index % 6) * 300, y: Math.floor(index / 6) * 150 },
+    width: 252,
+    height: 110,
+    style: {
+      backgroundColor: "#ffffff",
+      textColor: "#243247",
+      borderColor: AUTRISA_BLUE,
+      borderStyle: e.employment_status === "CEASED" ? "dashed" : "solid",
+    },
+    collapsed: false,
+    siblingOrder: index,
+    metadata: {
+      autrisaTheme: 1,
+      company: e.company,
+      businessLine: e.business_line,
+      branch: e.branch,
+      area: e.area,
+      dni: e.dni,
+      employmentStatus: e.employment_status,
+      hierarchyStatus: e.hierarchy_status || "EMPTY",
+    },
+  };
+}
+export function chartService(db) {
+  const repository = chartRepository(db),
+    employees = employeeRepository(db);
+  function getDraft(id) {
+    const d = repository.draft(id);
+    assert(d, "Borrador no encontrado.", 404);
+    return d;
+  }
+  function getChart(id) {
+    const c = db
+      .prepare(
+        "SELECT o.*,c.name AS company FROM organization_charts o JOIN companies c ON c.id=o.company_id WHERE o.id=?",
+      )
+      .get(id);
+    assert(c, "Organigrama no encontrado.", 404);
+    return c;
+  }
+  function checkGraph(graph) {
+    try {
+      validateGraph(graph);
+    } catch (e) {
+      throw new AppError(e.message);
+    }
+    const getEmployee = db.prepare("SELECT 1 FROM employees WHERE id=?");
+    for (const n of graph.nodes)
+      if (n.employeeId)
+        assert(
+          getEmployee.get(n.employeeId),
+          "El empleado asociado no existe.",
+        );
+  }
+  function createDraft(chartId, options = {}) {
+    const chart = getChart(chartId),
+      id = randomUUID();
+    const name = options.name || "Nuevo borrador";
+    assert(
+      typeof name === "string" && name.trim() && name.length <= 200,
+      "Nombre de borrador inválido.",
+    );
+    assert(
+      ["empty", "master", "version"].includes(options.mode || "empty"),
+      "Origen de borrador inválido.",
+    );
+    let graph = { nodes: [], edges: [] },
+      base = null;
+    if (options.mode === "master") {
+      const people = employees.active(chart.company_id),
+        nodes = people.map(employeeNode);
+      const nodeIds = new Map(nodes.map((n) => [n.employeeId, n.id]));
+      graph = {
+        nodes,
+        edges: people
+          .filter(
+            (e) =>
+              e.hierarchy_status === "RESOLVED" &&
+              nodeIds.has(e.supervisor_employee_id),
+          )
+          .map((e) => ({
+            id: randomUUID(),
+            source: nodeIds.get(e.supervisor_employee_id),
+            target: nodeIds.get(e.id),
+            style: { color: "#94a3b8", width: 1.5, lineType: "solid" },
+          })),
+      };
+      for (const n of graph.nodes) {
+        const person = people.find((e) => e.id === n.employeeId);
+        if (
+          person.hierarchy_status === "RESOLVED" &&
+          !nodeIds.has(person.supervisor_employee_id)
+        )
+          n.metadata.hierarchyStatus = "OUTSIDE_COMPANY";
+      }
+    } else if (options.mode === "version") {
+      const version = getVersion(chartId, options.versionId);
+      graph = version.snapshot;
+      base = version.id;
+    }
+    checkGraph(graph);
+    db.transaction(() => {
+      db.prepare(
+        "INSERT INTO chart_drafts(id,chart_id,base_version_id,name) VALUES (?,?,?,?)",
+      ).run(id, chartId, base, name.trim());
+      repository.writeGraph(id, graph);
+    })();
+    return getDraft(id);
+  }
+  function saveDraft(id, body) {
+    const current = getDraft(id);
+    assert(
+      Number.isInteger(body.content_revision),
+      "Falta la revisión del borrador.",
+    );
+    assert(
+      typeof body.name === "string" &&
+        body.name.trim() &&
+        body.name.length <= 200,
+      "Nombre de borrador inválido.",
+    );
+    checkGraph(body);
+    db.transaction(() => {
+      const result = db
+        .prepare(
+          "UPDATE chart_drafts SET name=?,content_revision=content_revision+1,updated_at=CURRENT_TIMESTAMP WHERE id=? AND content_revision=?",
+        )
+        .run(body.name.trim(), id, body.content_revision);
+      assert(
+        result.changes === 1,
+        "El borrador cambió en otra sesión. Recárgalo antes de guardar.",
+        409,
+      );
+      repository.writeGraph(current.id, body);
+    }).immediate();
+    return getDraft(id);
+  }
+  function publish(id, { content_revision } = {}) {
+    return db
+      .transaction(() => {
+        const draft = getDraft(id);
+        assert(
+          draft.content_revision === content_revision,
+          "Guarda o recarga el borrador antes de publicar.",
+          409,
+        );
+        checkGraph(draft);
+        assert(
+          draft.nodes.length,
+          "No se puede publicar un organigrama vacío.",
+        );
+        const number = db
+          .prepare(
+            "SELECT COALESCE(MAX(version_number),0)+1 AS n FROM chart_versions WHERE chart_id=?",
+          )
+          .get(draft.chart_id).n;
+        const versionId = randomUUID();
+        const snapshot = {
+          schemaVersion: 1,
+          name: draft.name,
+          nodes: draft.nodes,
+          edges: draft.edges,
+        };
+        db.prepare(
+          "INSERT INTO chart_versions(id,chart_id,version_number,source_draft_id,snapshot_json) VALUES (?,?,?,?,?)",
+        ).run(versionId, draft.chart_id, number, id, JSON.stringify(snapshot));
+        return getVersion(draft.chart_id, versionId);
+      })
+      .immediate();
+  }
+  function getVersion(chartId, id) {
+    const version = db
+      .prepare("SELECT * FROM chart_versions WHERE chart_id=? AND id=?")
+      .get(chartId, id);
+    assert(version, "Versión no encontrada.", 404);
+    return {
+      ...version,
+      snapshot_json: undefined,
+      snapshot: JSON.parse(version.snapshot_json),
+    };
+  }
+  function syncPreview(id) {
+    return getDraft(id)
+      .nodes.filter((n) => n.employeeId)
+      .map((n) => {
+        const e = employees.get(n.employeeId);
+        return {
+          nodeId: n.id,
+          currentTitle: n.title,
+          currentSubtitle: n.subtitle,
+          employee: e,
+          changed:
+            !!e &&
+            (n.title !== e.full_name ||
+              n.subtitle !== e.position_name ||
+              n.metadata.employmentStatus !== e.employment_status ||
+              n.metadata.company !== e.company ||
+              n.metadata.branch !== e.branch ||
+              n.metadata.area !== e.area ||
+              n.metadata.businessLine !== e.business_line ||
+              n.metadata.dni !== e.dni),
+        };
+      })
+      .filter((n) => n.changed);
+  }
+  return {
+    getChart,
+    getDraft,
+    createDraft,
+    saveDraft,
+    publish,
+    getVersion,
+    syncPreview,
+    list: (companyId) =>
+      db
+        .prepare(
+          `SELECT * FROM organization_charts ${companyId ? "WHERE company_id=?" : ""}`,
+        )
+        .all(...(companyId ? [companyId] : [])),
+    drafts: (chartId) => {
+      getChart(chartId);
+      return db
+        .prepare(
+          "SELECT * FROM chart_drafts WHERE chart_id=? ORDER BY updated_at DESC,rowid DESC",
+        )
+        .all(chartId);
+    },
+    versions: (chartId) => {
+      getChart(chartId);
+      return db
+        .prepare(
+          "SELECT id,chart_id,version_number,source_draft_id,published_at FROM chart_versions WHERE chart_id=? ORDER BY version_number DESC",
+        )
+        .all(chartId);
+    },
+  };
+}

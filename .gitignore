@@ -1,0 +1,10 @@
+node_modules/
+frontend/dist/
+data/*
+!data/.gitkeep
+*.xlsm
+*.xlsx
+*.log
+.env
+coverage/
+.npm-cache/
