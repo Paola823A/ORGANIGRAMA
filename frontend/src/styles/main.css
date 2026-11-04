@@ -585,6 +585,7 @@ small {
 .rectangle-selection-mode .vue-flow__pane { cursor: crosshair; }
 .rectangle-selection-mode .canvas-slide-status { pointer-events: none; }
 .graph-canvas .vue-flow__selection { background: #123d701a; border: 1px solid #123d70; }
+.editable-lines .vue-flow__edge-path,.editable-lines .vue-flow__edge-interaction { cursor: grab; }
 .canvas-navigation {
   position: absolute;
   bottom: 15px;

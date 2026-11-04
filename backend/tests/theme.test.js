@@ -9,8 +9,8 @@ test('marcas por empresa: colores de tarjetas, agrupadores y líneas, sin perder
     const theme=companyTheme(name),branded=applyBrandTheme(graph,name);
     if(name!=='AUTRISA') assert.notEqual(theme.color,AUTRISA_BLUE);
     assert.equal(branded.nodes[1].style.borderColor,theme.color);
-    assert.equal(branded.nodes[1].style.textColor,theme.color);
-    assert.equal(branded.edges[0].style.color,theme.color);
+    assert.equal(branded.nodes[1].style.textColor,theme.headingColor);
+    assert.equal(branded.edges[0].style.color,theme.lineColor);
     assert.equal(branded.edges[0].style.width,2);
     assert.equal(branded.edges[0].style.lineType,'dashed');
     assert.deepEqual(applyBrandTheme(branded,name),branded);
@@ -20,4 +20,13 @@ test('marcas por empresa: colores de tarjetas, agrupadores y líneas, sin perder
     assert.equal(custom.edges[0].style.color,'#112233');
   }
   assert.equal(JSON.stringify(graph),before);
+});
+test('Inc motors: actualiza el dorado anterior a líneas gris oscuro y títulos negros una sola vez',()=>{
+  const graph={nodes:[manualNode('area',{type:'AREA',metadata:{brandTheme:'incamotors'},style:{borderColor:'#b8873e',textColor:'#b8873e'}})],edges:[{id:'e',source:'area',target:'area',style:{color:'#b8873e',brandTheme:'incamotors',width:2,lineType:'solid'}}]};
+  const next=applyBrandTheme(graph,'INCAMOTORS');
+  assert.equal(next.nodes[0].style.textColor,'#000000');
+  assert.equal(next.nodes[0].style.borderColor,'#b8873e');
+  assert.equal(next.edges[0].style.color,'#555555');
+  next.nodes[0].style.textColor='#112233';next.edges[0].style.color='#222222';
+  assert.deepEqual(applyBrandTheme(next,'INCAMOTORS'),next);
 });

@@ -1,11 +1,12 @@
 <script setup>
-import { computed, nextTick, ref, shallowRef, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from "vue";
 import { ConnectionMode, SelectionMode, VueFlow, useVueFlow } from "@vue-flow/core";
 import ChartCard from "./ChartCard.vue";
 import JunctionNode from "./JunctionNode.vue";
 import GroupHeading from "./GroupHeading.vue";
 import CompactEdge from "./CompactEdge.vue";
 import { anchorOutgoingLines, slidePosition } from "../services/graphMovement.js";
+import { splitGraphEdge } from '../services/edgeRouting.js';
 import { isGroupingNode, subordinateCounts } from "../../../shared/graph.js";
 import "@vue-flow/core/dist/style.css";
 import "@vue-flow/core/dist/theme-default.css";
@@ -56,9 +57,48 @@ function finishRectangle() {
   rectangleMode.value = false;
   ignoreClickUntil = Date.now() + 150;
 }
-function beginPointer() {
+let edgeDrag=null,lastEdgeClick=null;
+function beginPointer(event) {
   rectangleSelection = null;
+  if(!props.editable || event.button!==0 || event.target.closest('.vue-flow__edgeupdater')) return;
+  const group=event.target.closest('.vue-flow__edge'),path=group?.querySelector('.vue-flow__edge-path');
+  if(!path) return;
+  const location=connectionLocation(event,path);
+  if(!location) return;
+  edgeDrag={id:group.getAttribute('data-id'),graph:props.graph,start:{x:event.clientX,y:event.clientY},...location,
+    junctionId:crypto.randomUUID(),edgeId:crypto.randomUUID(),pointerId:event.pointerId,element:event.currentTarget,moved:false};
+  event.stopPropagation();event.preventDefault();
+  event.currentTarget.setPointerCapture(event.pointerId);
+  window.addEventListener('pointermove',pullEdge);
+  window.addEventListener('pointerup',finishEdge);
+  window.addEventListener('pointercancel',cancelEdge);
 }
+function pullEdge(event) {
+  if(!edgeDrag || event.pointerId!==edgeDrag.pointerId) return;
+  if(!edgeDrag.moved && Math.hypot(event.clientX-edgeDrag.start.x,event.clientY-edgeDrag.start.y)<5) return;
+  edgeDrag.moved=true;
+  const cursor=screenToFlowCoordinate({x:event.clientX,y:event.clientY});
+  const horizontal=['left','right'].includes(edgeDrag.direction);
+  edgeDrag.position=horizontal ? {x:edgeDrag.position.x,y:cursor.y}:{x:cursor.x,y:edgeDrag.position.y};
+  preview.value=splitGraphEdge(edgeDrag.graph,edgeDrag.id,edgeDrag.position,edgeDrag.direction,edgeDrag.junctionId,edgeDrag.edgeId);
+}
+function cancelEdge() {
+  if(edgeDrag?.element.hasPointerCapture(edgeDrag.pointerId)) edgeDrag.element.releasePointerCapture(edgeDrag.pointerId);
+  window.removeEventListener('pointermove',pullEdge);window.removeEventListener('pointerup',finishEdge);window.removeEventListener('pointercancel',cancelEdge);
+  preview.value=null;edgeDrag=null;
+}
+function finishEdge(event) {
+  if(!edgeDrag || event.pointerId!==edgeDrag.pointerId) return;
+  pullEdge(event);
+  const finished=edgeDrag;
+  cancelEdge();
+  if(finished.moved) {ignoreClickUntil=Date.now()+200;emit('split-edge',finished.id,finished.position,finished.direction);}
+  else if(lastEdgeClick?.id===finished.id && Date.now()-lastEdgeClick.time<350) {
+    lastEdgeClick=null;ignoreClickUntil=Date.now()+200;
+    emit('split-edge',finished.id,finished.position,finished.direction);
+  } else {lastEdgeClick={id:finished.id,time:Date.now()};emit('select-edge',finished.id);}
+}
+onBeforeUnmount(cancelEdge);
 function clickPane() {
   if (Date.now() < ignoreClickUntil) return;
   slideId.value = null;
@@ -174,11 +214,8 @@ watch(() => props.graph, () => {
 function fit() {
   nextTick(() => fitView({ padding: 0.15, duration: 250, maxZoom: 1 }));
 }
-function splitConnection({ event, edge }) {
-  if (!props.editable) return;
+function connectionLocation(event,path) {
   const pointer = event.touches?.[0] || event;
-  const path = event.target.closest(".vue-flow__edge")?.querySelector(".vue-flow__edge-path");
-  if (!path) return;
   const matrix = path.getScreenCTM(), length = path.getTotalLength();
   if (!matrix || !length) return;
   let closest = 0, distance = Infinity;
@@ -193,8 +230,13 @@ function splitConnection({ event, edge }) {
   const before = path.getPointAtLength(Math.max(0, closest - 1));
   const after = path.getPointAtLength(Math.min(length, closest + 1));
   const dx = after.x - before.x, dy = after.y - before.y;
-  emit("split-edge", edge.id, screenToFlowCoordinate({ x: point.x, y: point.y }),
-    Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "right" : "left") : (dy > 0 ? "down" : "up"));
+  return {position:screenToFlowCoordinate({x:point.x,y:point.y}),direction:Math.abs(dx)>Math.abs(dy) ? dx>0 ? 'right':'left':dy>0 ? 'down':'up'};
+}
+function splitConnection({event,edge}) {
+  if(!props.editable || Date.now()<ignoreClickUntil) return;
+  const path=event.target.closest('.vue-flow__edge')?.querySelector('.vue-flow__edge-path');
+  const at=path && connectionLocation(event,path);
+  if(at) emit('split-edge',edge.id,at.position,at.direction);
 }
 function center(node) {
   nextTick(() =>
@@ -264,7 +306,7 @@ watch(
 defineExpose({ fit, center, initialView });
 </script>
 <template>
-  <div class="graph-canvas" :class="{ 'has-pan-sliders': showSliders, 'rectangle-selection-mode': rectangleMode }"
+  <div class="graph-canvas" :class="{ 'has-pan-sliders': showSliders, 'rectangle-selection-mode': rectangleMode, 'editable-lines': editable }"
     tabindex="0" @dblclick="toggleRectangle" @keydown.esc="rectangleMode = false" @pointerdown.capture="beginPointer">
     <VueFlow
       :id="id"
@@ -288,7 +330,7 @@ defineExpose({ fit, center, initialView });
       @nodes-change="onChanges"
       @node-click="clickNode"
       @node-double-click="enableSlide"
-      @edge-click="({ edge }) => emit('select-edge', edge.id)"
+      @edge-click="({ edge }) => { if(Date.now()>=ignoreClickUntil) emit('select-edge', edge.id); }"
       @edge-double-click="splitConnection"
       @pane-click="clickPane"
       @selection-end="finishRectangle"
@@ -321,7 +363,7 @@ defineExpose({ fit, center, initialView });
       <p>Ctrl+C copia la selección; Ctrl+V pega copias visuales de personal que no suman al contador. Supr elimina las tarjetas o la conexión seleccionada. Dentro de un campo, estos comandos editan el texto.</p>
       <p>Doble clic en un espacio vacío: dibujar un rectángulo para seleccionar varias tarjetas. Al terminar vuelve automáticamente la mano para mover la pizarra. Escape cancela este modo.</p>
       <p>Doble clic y arrastrar: deslizar sobre su eje manteniendo fijas las ramas inferiores. Un clic desactiva este modo.</p>
-      <p>Doble clic sobre una línea: crear un punto de unión.</p>
+      <p>Arrastra un tramo de línea para ajustar su recorrido sin mover las tarjetas. Doble clic sobre una línea: crear un punto de unión.</p>
     </aside>
     <div v-if="rectangleMode" class="canvas-slide-status" role="status">Arrastra sobre el fondo para seleccionar tarjetas · Esc para cancelar</div>
     <div v-if="editable && slideId" class="canvas-slide-status" role="status">

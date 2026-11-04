@@ -349,7 +349,7 @@ function addManual(grouping = false) {
     height: grouping ? 60 : 110,
     style: {
       backgroundColor: grouping ? "#fbfcfd" : "#f3f3fa",
-      textColor: grouping ? brand.value.color : "#243247",
+      textColor: grouping ? brand.value.headingColor : "#243247",
       borderColor: brand.value.color,
       borderStyle: "solid",
       ...(grouping ? { textAlign: "center" } : {}),
@@ -357,7 +357,7 @@ function addManual(grouping = false) {
     collapsed: false,
     siblingOrder: graph.value.nodes.length,
     metadata: {
-      autrisaTheme: 1, brandTheme: brand.value.key,
+      autrisaTheme: 1, brandTheme: brand.value.key, brandPalette: 2,
       company: company.value?.name || "",
       businessLine: "",
       branch: "",
@@ -418,7 +418,7 @@ function addEmployee(e) {
       area: e.area,
       dni: e.dni,
       employmentStatus: e.employment_status,
-      autrisaTheme: 1, brandTheme: brand.value.key,
+      autrisaTheme: 1, brandTheme: brand.value.key, brandPalette: 2,
       hierarchyStatus: e.hierarchy_status || "EMPTY",
     },
   };
@@ -634,7 +634,7 @@ function applySync() {
           @move-many="moveMany"
           @toggle="toggle"
           @split-edge="splitVisibleEdge"
-          @connect="(c) => attempt(() => editor.connect(c,null,{color:brand.value.color,brandTheme:brand.value.key}))"
+          @connect="(c) => attempt(() => editor.connect(c, null, { color: brand.lineColor, brandTheme: brand.key, brandPalette: 2 }))"
           @reconnect="
             (v) => attempt(() => editor.connect(v.connection, v.edge.id))
           "
