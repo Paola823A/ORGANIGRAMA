@@ -1,6 +1,7 @@
 import { computed, ref, shallowRef } from "vue";
 import { compactJunctions, validateGraph } from "../../../shared/graph.js";
 import { moveGraphNode } from "../services/graphMovement.js";
+import { splitGraphEdge } from '../services/edgeRouting.js';
 const copy = (value) => JSON.parse(JSON.stringify(value));
 export function useEditor() {
   const graph = shallowRef({ nodes: [], edges: [] }),
@@ -148,26 +149,8 @@ export function useEditor() {
     });
   }
   function splitEdge(connectionId, position, direction = "down") {
-    const edge = graph.value.edges.find((item) => item.id === connectionId);
-    if (!edge) throw new Error("La conexión ya no existe.");
     const id = crypto.randomUUID();
-    const handles = {
-      down: ["target-top", "source-bottom"], up: ["target-bottom", "source-top"],
-      right: ["target-left", "source-right"], left: ["target-right", "source-left"],
-    }[direction];
-    const node = {
-      id, type: "JUNCTION", employeeId: null, title: "Punto de unión", subtitle: "",
-      position: { x: position.x - 4, y: position.y - 4 }, width: 8, height: 8,
-      style: { backgroundColor: edge.style?.color || "#94a3b8", textColor: "#243247", borderColor: edge.style?.color || "#94a3b8", borderStyle: "solid" },
-      metadata: {}, siblingOrder: graph.value.nodes.length, collapsed: false,
-    };
-    commit({
-      nodes: [...graph.value.nodes, node],
-      edges: graph.value.edges.flatMap((item) => item.id !== connectionId ? [item] : [
-        { ...edge, target: id, style: { color: "#94a3b8", width: 1.5, lineType: "solid", ...edge.style, targetHandle: handles[0] } },
-        { ...edge, id: crypto.randomUUID(), source: id, style: { color: "#94a3b8", width: 1.5, lineType: "solid", ...edge.style, sourceHandle: handles[1] } },
-      ]),
-    });
+    commit(splitGraphEdge(graph.value,connectionId,position,direction,id));
     selectNode(id);
     edgeId.value = null;
   }
