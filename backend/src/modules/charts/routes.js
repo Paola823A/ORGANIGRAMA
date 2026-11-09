@@ -17,8 +17,10 @@ export function chartRoutes(service) {
     res.json(service.getDraft(req.params.id)),
   );
   router.put("/drafts/:id", (req, res) =>
-    res.json(service.saveDraft(req.params.id, req.body)),
+    res.json(service.saveDraft(req.params.id, req.body,req.user?.displayName || 'Modo local')),
   );
+  router.get('/drafts/:id/history',(req,res)=>res.json(service.history(req.params.id)));
+  router.post('/drafts/:id/history/:historyId/restore',(req,res)=>res.json(service.restore(req.params.id,req.params.historyId,req.body.content_revision,req.user?.displayName || 'Modo local')));
   router.get("/drafts/:id/sync-preview", (req, res) =>
     res.json(service.syncPreview(req.params.id)),
   );

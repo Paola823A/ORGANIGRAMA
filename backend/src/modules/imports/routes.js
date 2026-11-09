@@ -25,6 +25,7 @@ export function importRoutes(service) {
     res.status(201).json(service.confirm(req.body,req.importScope || {userId:req.user?.id})),
   );
   router.get("/", (req, res) => res.json(service.history(req.importScope)));
+  router.delete('/:id',(req,res)=>res.json(service.removeHistory(req.params.id,req.importScope)));
   router.get("/:id/issues", (req, res) =>
     res.json(service.issues(req.params.id,req.importScope)),
   );

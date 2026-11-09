@@ -4,6 +4,7 @@ import { employeeRepository } from "../employees/repository.js";
 import { validateGraph } from "../../../../shared/graph.js";
 import { AppError, assert } from "../../utils/errors.js";
 import { AUTRISA_BLUE,applyBrandTheme } from "../../../../shared/theme.js";
+import {recordDraft} from './history.js';
 
 export function employeeNode(e, index = 0) {
   return {
@@ -122,7 +123,7 @@ export function chartService(db) {
     })();
     return getDraft(id);
   }
-  function saveDraft(id, body) {
+  function saveDraft(id, body, actor='Modo local',action='Edición') {
     const current = getDraft(id);
     assert(
       Number.isInteger(body.content_revision),
@@ -146,7 +147,9 @@ export function chartService(db) {
         "El borrador cambió en otra sesión. Recárgalo antes de guardar.",
         409,
       );
+      if(!db.prepare('SELECT 1 FROM draft_history WHERE draft_id=? LIMIT 1').get(id)) recordDraft(db,current,actor,'Estado inicial');
       repository.writeGraph(current.id, body);
+      recordDraft(db,repository.draft(id),actor,action);
     }).immediate();
     return getDraft(id);
   }
@@ -235,6 +238,13 @@ export function chartService(db) {
     publish,
     getVersion,
     syncPreview,
+    history:(id)=>{getDraft(id);return db.prepare('SELECT id,actor_name,action,created_at FROM draft_history WHERE draft_id=? ORDER BY rowid DESC LIMIT 200').all(id);},
+    restore:(id,historyId,revision,actor)=>{
+      getDraft(id);
+      const entry=db.prepare('SELECT snapshot_json FROM draft_history WHERE id=? AND draft_id=?').get(historyId,id);
+      assert(entry,'Punto del historial no encontrado.',404);
+      return saveDraft(id,{...JSON.parse(entry.snapshot_json),content_revision:revision},actor,'Restauración de historial');
+    },
     removeVersion,
     list: (companyId) =>
       db

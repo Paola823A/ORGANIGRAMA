@@ -23,7 +23,7 @@ export function normalize(value = "") {
 export function countPeople(graph) {
   return new Set(
     graph.nodes
-      .filter((node) => node.type === "EMPLOYEE" && node.employeeId && !node.metadata?.visualOnly)
+      .filter((node) => node.type === "EMPLOYEE" && node.employeeId && !node.metadata?.visualOnly && !['CEASED','ABSENT'].includes(node.metadata?.employmentStatus))
       .map((node) => node.employeeId),
   ).size;
 }
@@ -41,7 +41,7 @@ export function subordinateCounts(graph) {
       if (seen.has(id)) continue;
       seen.add(id);
       const node = nodes.get(id);
-      if (node?.type === "EMPLOYEE" && node.employeeId && !node.metadata?.visualOnly && node.employeeId !== boss.employeeId) people.add(node.employeeId);
+      if (node?.type === "EMPLOYEE" && node.employeeId && !node.metadata?.visualOnly && !['CEASED','ABSENT'].includes(node.metadata?.employmentStatus) && node.employeeId !== boss.employeeId) people.add(node.employeeId);
       queue.push(...(children.get(id) || []));
     }
     return [boss.id, people.size];
