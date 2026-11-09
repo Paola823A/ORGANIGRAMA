@@ -12,7 +12,7 @@ function setup(legacy = false) {
   if (legacy) {
     db.pragma("foreign_keys = ON");
     db.exec(readFileSync(new URL("../migrations/001_initial.sql", import.meta.url), "utf8"));
-    for (const migration of ['003_users_permissions.sql','004_delegated_upload.sql','005_simplify_users.sql','006_permanent_passwords.sql','007_remove_published_versions.sql']) db.exec(readFileSync(new URL(`../migrations/${migration}`, import.meta.url),'utf8'));
+    for (const migration of ['003_users_permissions.sql','004_delegated_upload.sql','005_simplify_users.sql','006_permanent_passwords.sql','007_remove_published_versions.sql','008_draft_history.sql','009_hide_import_history.sql']) db.exec(readFileSync(new URL(`../migrations/${migration}`, import.meta.url),'utf8'));
   }
   const
     imports = importService(db);

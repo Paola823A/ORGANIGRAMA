@@ -2,6 +2,7 @@ import { randomUUID, createHash } from "node:crypto";
 import { readWorkbook } from "./reader.js";
 import { normalize } from "../../../../shared/graph.js";
 import { assert } from "../../utils/errors.js";
+import {syncImportedDrafts} from '../charts/importSync.js';
 
 function matchRecords(records, existing) {
   const used = new Set();
@@ -286,6 +287,8 @@ export function importService(db) {
             issue.code,
             issue.message,
           );
+        const actor=p.actor ? db.prepare('SELECT display_name FROM app_users WHERE id=?').get(p.actor)?.display_name : 'Modo local';
+        syncImportedDrafts(db,p.records,actor || 'Importación');
       }).immediate();
     } catch (error) {
       if (!error.status) {
@@ -303,9 +306,16 @@ export function importService(db) {
   return {
     preview,
     confirm,
+    removeHistory:(id,context)=>{
+      const batch=db.prepare('SELECT * FROM import_batches WHERE id=? AND history_deleted_at IS NULL').get(id);
+      assert(batch,'Importación no encontrada.',404);
+      if(context) assert(batch.actor_user_id===context.userId && batch.scope_json && JSON.parse(batch.scope_json).every(company=>context.companyIds.includes(company)),'No tienes acceso a esta importación.',403);
+      db.prepare('UPDATE import_batches SET history_deleted_at=CURRENT_TIMESTAMP WHERE id=?').run(id);
+      return {ok:true};
+    },
     history: (context) =>
       db
-        .prepare("SELECT * FROM import_batches ORDER BY rowid DESC LIMIT 100")
+        .prepare("SELECT * FROM import_batches WHERE history_deleted_at IS NULL ORDER BY rowid DESC LIMIT 100")
         .all()
         .filter(b=>!context || b.actor_user_id===context.userId && b.scope_json && JSON.parse(b.scope_json).every(id=>context.companyIds.includes(id)))
         .map((b) => ({

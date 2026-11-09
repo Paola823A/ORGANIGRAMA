@@ -87,6 +87,12 @@ async function showIssues(id) {
     error.value = e.message;
   }
 }
+async function removeHistory(batch) {
+  if(busy.value || !window.confirm(`¿Quitar ${batch.filename} del historial? El personal importado y los organigramas se conservarán.`)) return;
+  busy.value=true;error.value='';
+  try {await api(`/imports/${batch.id}`,{method:'DELETE'});await refreshHistory();notice.value='Registro eliminado del historial.';}
+  catch(e){error.value=e.message;}finally{busy.value=false;}
+}
 onMounted(() => refreshHistory().catch((e) => (error.value = e.message)));
 function date(value) {
   return new Date(value.replace(" ", "T") + "Z").toLocaleString("es-PE");
@@ -270,6 +276,7 @@ function date(value) {
               <th>Actualizados</th>
               <th>Resultado</th>
               <th>Observaciones</th>
+              <th>Acciones</th>
             </tr>
           </thead>
           <tbody>
@@ -297,6 +304,7 @@ function date(value) {
                   Ver {{ batch.issue_count }}
                 </button>
               </td>
+              <td><button class="danger" :disabled="busy" @click="removeHistory(batch)">Eliminar</button></td>
             </tr>
           </tbody>
         </table>

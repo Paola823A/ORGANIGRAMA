@@ -281,7 +281,7 @@ async function createDraft() {
   }
 }
 async function save() {
-  if (!draft.value) return;
+  if (!draft.value || busy.value) return;
   busy.value = true;
   error.value = "";
   const savingId = draft.value.id;
@@ -302,11 +302,44 @@ async function save() {
     notice.value = "Borrador guardado.";
     await refreshLists();
   } catch (e) {
+    autosaveBlocked=true;
     error.value = e.message;
   } finally {
     busy.value = false;
   }
 }
+const historyEntries=ref([]),historyOpen=ref(false);
+let autosaveTimer,pollTimer,autosaveBlocked=false;
+watch(()=>draft.value?.id,()=>{autosaveBlocked=false;});
+watch([graph,()=>draft.value?.name,busy],()=>{
+  clearTimeout(autosaveTimer);
+  if(dirty.value && !autosaveBlocked) autosaveTimer=setTimeout(()=>{if(dirty.value && !busy.value && !autosaveBlocked) save();},1800);
+});
+async function openHistory() {
+  error.value='';
+  try {historyEntries.value=await api(`/drafts/${draft.value.id}/history`);historyOpen.value=true;}
+  catch(e){error.value=e.message;}
+}
+async function restoreHistory(entry) {
+  if(busy.value || !window.confirm(`¿Restaurar el estado de ${entry.actor_name} del ${entry.created_at}? Los cambios actuales sin guardar se descartarán.`)) return;
+  busy.value=true;error.value='';
+  try {
+    const value=await api(`/drafts/${draft.value.id}/history/${entry.id}/restore`,{method:'POST',body:{content_revision:draft.value.content_revision}});
+    draft.value=value;savedName.value=value.name;editor.load(applyBrandTheme(value,company.value?.name));historyOpen.value=false;notice.value='Estado restaurado.';
+  }catch(e){error.value=e.message;}finally{busy.value=false;}
+}
+onMounted(()=>{pollTimer=setInterval(async()=>{
+  if(!draft.value || busy.value) return;
+  if(dirty.value) return;
+  const id=draft.value.id;
+  try {
+    const value=await api(`/drafts/${id}`);
+    if(draft.value?.id===id && !dirty.value && !busy.value && value.content_revision!==draft.value.content_revision) {
+      draft.value=value;savedName.value=value.name;editor.load(applyBrandTheme(value,company.value?.name));notice.value='Board actualizado con los cambios de la base o de otro editor.';
+    }
+  }catch{/* Los errores de sesión se gestionan en el cliente API. */}
+},6000);});
+onBeforeUnmount(()=>{clearTimeout(autosaveTimer);clearInterval(pollTimer);});
 async function publish() {
   if (dirty.value) {
     error.value = "Guarda los cambios antes de publicar.";
@@ -615,8 +648,17 @@ function applySync() {
         >
           ↷</button
         ><button @click="openSync" :disabled="busy">Sincronizar datos</button>
+        <button @click="openHistory" :disabled="busy">Historial</button>
+        <span role="status">{{ busy ? 'Guardando / procesando…' : dirty ? 'Cambios pendientes de guardado automático' : 'Guardado automático activo' }}</span>
         <button @click="downloadSelection" :disabled="exportingSelection || !pdfSelection.nodes.length" title="Selecciona tarjetas con Ctrl + clic o con la selección rectangular y descarga su PDF">{{ exportingSelection ? 'Generando PDF…' : `Descargar selección PDF (${pdfSelection.nodes.length})` }}</button>
         <span v-if="exportProgress" role="status" aria-live="polite">{{ exportProgress }}</span>
+      </div>
+      <div v-if="historyOpen" class="modal-backdrop" @click.self="historyOpen=false">
+        <section class="modal" role="dialog" aria-modal="true" aria-label="Historial del Board">
+          <h2>Historial</h2><button @click="historyOpen=false">Cerrar</button>
+          <p v-if="!historyEntries.length">Todavía no hay cambios registrados.</p>
+          <div v-for="entry in historyEntries" :key="entry.id" class="user-row"><div><strong>{{ entry.actor_name }}</strong><small>{{ entry.action }} · {{ entry.created_at }} UTC</small></div><button :disabled="busy" @click="restoreHistory(entry)">Restaurar</button></div>
+        </section>
       </div>
       <div class="editor-workspace">
         <GraphCanvas
