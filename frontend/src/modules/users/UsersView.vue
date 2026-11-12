@@ -7,6 +7,11 @@ const { user,localMode } = useAuth(), { companies } = useCompanies();
 const users = ref([]), error = ref(''), notice = ref(''), busy = ref(false), form = ref(null), query = ref(''), employees = ref([]);
 const searchText = ref(''), companyFilter = ref(''), moduleFilter = ref(''), statusFilter = ref(''), page = ref(0), deleting = ref(null);
 const modalElement = ref(null);
+const shareCredentials=ref(null);
+async function copyCredentials() {
+  try {await navigator.clipboard.writeText(`Usuario: ${shareCredentials.value.username}\nContraseña: ${shareCredentials.value.password}`);notice.value='Usuario y contraseña copiados.';}
+  catch{error.value='El navegador no permitió copiar. Intenta nuevamente.';}
+}
 watch(form,async value=>{if(value){await nextTick();modalElement.value?.querySelector('input')?.focus();}});
 const companyName = id => companies.value.find(c=>c.id===id)?.name || id;
 const moduleName = module => ({graphic:'Organigrama',board:'Board',upload:'Upload'})[module];
@@ -27,6 +32,8 @@ async function save() {
   error.value = '';busy.value = true;
   try {
     const value = await api(form.value.id ? `/auth/users/${form.value.id}` : '/auth/users',{method:form.value.id ? 'PUT':'POST',body:form.value});
+    if(form.value.password) shareCredentials.value={username:value.username,password:form.value.password};
+    else shareCredentials.value=null;
     notice.value = form.value.id ? 'Usuario y permisos actualizados.' : 'Cuenta creada. El usuario ya puede ingresar con los permisos asignados.';
     await load();form.value = null;
   } catch(e) { error.value = e.message; } finally {busy.value = false;}
@@ -49,6 +56,7 @@ onMounted(async()=>{if(user.value?.role==='OWNER') try {await load();} catch(e) 
       <p>Busca una cuenta para editarla o crea un nuevo usuario.</p>
       <p v-if="error" class="alert error" role="alert">{{ error }}</p>
       <p v-if="notice" class="alert success" role="status">{{ notice }}</p>
+      <div v-if="shareCredentials" class="toolbar-group"><button @click="copyCredentials">Copiar usuario y contraseña de {{ shareCredentials.username }}</button><button @click="shareCredentials=null">Ocultar</button></div>
       <div class="users-table-layout">
         <div class="access-card">
           <button @click="edit(null)">+ Crear usuario</button>

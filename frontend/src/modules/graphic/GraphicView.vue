@@ -8,8 +8,11 @@ import { exportGraph } from "../../services/export.js";
 import { reflowVisibleGraph } from "../../services/layout.js";
 import { applyBrandTheme } from "../../../../shared/theme.js";
 import GraphCanvas from "../../components/GraphCanvas.vue";
+import {boardOptions,positionGroup} from '../../services/boardFilters.js';
 import { useAuth } from "../../composables/useAuth.js";
 const { can } = useAuth();
+const positionFilter=ref('');
+const matchingPositions=computed(()=>positionFilter.value ? displayed.value.nodes.filter(n=>n.type==='EMPLOYEE' && positionGroup(n.subtitle)===positionFilter.value).map(n=>n.id):[]);
 const { companyId, companies } = useCompanies(),
   router = useRouter(),
   versions = ref([]),
@@ -51,21 +54,7 @@ const results = computed(() => {
         .slice(0, 40)
     : [];
 });
-const filterOptions = computed(() =>
-  Object.fromEntries(
-    ["businessLine", "branch", "area"].map((key) => {
-      const values = new Map();
-      for (const n of graph.value.nodes) {
-        const value = n.metadata?.[key];
-        if (value) values.set(normalize(value), value);
-      }
-      return [
-        key,
-        [...values.values()].sort((a, b) => a.localeCompare(b, "es")),
-      ];
-    }),
-  ),
-);
+const filterOptions=computed(()=>boardOptions(graph.value.nodes,filters.value));
 let request = 0,
   versionRequest = 0,
   timer;
@@ -295,6 +284,7 @@ function date(value) {
           <strong>{{ peopleCount }}</strong>
           <span>{{ peopleCount === 1 ? "Persona visible" : "Personas visibles" }}</span>
         </div>
+        <select v-model="positionFilter" aria-label="Puesto"><option value="">Puesto · todos</option><option v-for="value in filterOptions.position" :key="value" :value="value">{{ value }}</option></select>
         <label class="check-line"
           ><input type="checkbox" v-model="showNames" />Nombres</label
         ><button
@@ -315,7 +305,7 @@ function date(value) {
           ref="canvas"
           :graph="displayed"
           :hierarchy-graph="hierarchy"
-          :show-names="showNames"
+          :show-names="showNames" :highlight-ids="matchingPositions"
           :collapsed="collapsed"
           :highlight="highlight"
           @toggle="toggle"

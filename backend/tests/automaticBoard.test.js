@@ -15,9 +15,12 @@ test('importación: agrega nuevos, conserva posiciones y cesados, excluye cesado
   first.position={x:900,y:400};
   const saved=charts.saveDraft(draft.id,{...draft},'Editora Ana');
   const prior=charts.history(draft.id)[0];
-  p=imports.preview(book([person('00000001'),person('00000003')],[person('00000002')]),'dos.xlsm');imports.confirm({token:p.token});
+  p=imports.preview(book([person('00000001','',{positionName:'JEFE ACTUALIZADO',branch:'Juliaca'}),person('00000003')],[person('00000002')]),'dos.xlsm');imports.confirm({token:p.token});
   const updated=charts.getDraft(draft.id);
   assert.equal(updated.nodes.length,3);
+  assert.equal(updated.nodes.find(n=>n.id===first.id).subtitle,'JEFE ACTUALIZADO');
+  assert.equal(updated.nodes.find(n=>n.id===first.id).metadata.branch,'Juliaca');
+  assert.equal(updated.nodes.find(n=>n.id===first.id).metadata.pendingReview,true);
   assert.deepEqual(updated.nodes.find(n=>n.id===first.id).position,{x:900,y:400});
   const ceased=updated.nodes.find(n=>n.metadata.dni==='00000002');
   assert.equal(ceased.metadata.employmentStatus,'CEASED');

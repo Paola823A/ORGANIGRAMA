@@ -1,6 +1,7 @@
 <script setup>
 import {
   computed,
+  inject,
   nextTick,
   onBeforeUnmount,
   onMounted,
@@ -20,6 +21,9 @@ import { applyBrandTheme, companyTheme } from "../../../../shared/theme.js";
 import { restoreCompactedPoint } from "../../services/compactLayout.js";
 import { exportGraph } from "../../services/export.js";
 import { selectedGraph } from "../../services/exportSelection.js";
+import {boardFilterLabels,boardOptions,matchesBoard} from '../../services/boardFilters.js';
+const boardFilters=ref({businessLine:'',area:'',branch:'',position:''});
+const toolsHidden=inject('boardToolsHidden',ref(false));
 const exportingSelection = ref(false), exportProgress = ref('');
 const { companies, companyId } = useCompanies(),
   editor = useEditor();
@@ -88,8 +92,17 @@ const collapsed = computed(
   () => new Set(graph.value.nodes.filter((n) => n.collapsed).map((n) => n.id)),
 );
 const displayed = computed(() =>
-  visibleGraph(reflowVisibleGraph(graph.value, {}, collapsed.value), {}, collapsed.value),
+  {
+    const visible=visibleGraph(reflowVisibleGraph(graph.value, {}, collapsed.value), {}, collapsed.value);
+    const actualFilters={...boardFilters.value,position:''};
+    if(!Object.values(actualFilters).some(Boolean)) return visible;
+    const nodes=visible.nodes.filter(n=>n.type==='EMPLOYEE' && matchesBoard(n,actualFilters)),ids=new Set(nodes.map(n=>n.id));
+    return {...visible,nodes,edges:visible.edges.filter(e=>ids.has(e.source)&&ids.has(e.target))};
+  },
 );
+const filterOptions=computed(()=>boardOptions(graph.value.nodes,boardFilters.value));
+const matchingPositions=computed(()=>boardFilters.value.position ? displayed.value.nodes.filter(n=>n.type==='EMPLOYEE' && matchesBoard(n,{position:boardFilters.value.position})).map(n=>n.id):[]);
+watch(companyId,()=>{boardFilters.value={businessLine:'',area:'',branch:'',position:''};});
 const pdfSelection = computed(()=>selectedGraph(displayed.value,selectedIds.value));
 async function downloadSelection() {
   if(exportingSelection.value || !pdfSelection.value.nodes.length) return;
@@ -311,10 +324,7 @@ async function save() {
 const historyEntries=ref([]),historyOpen=ref(false);
 let autosaveTimer,pollTimer,autosaveBlocked=false;
 watch(()=>draft.value?.id,()=>{autosaveBlocked=false;});
-watch([graph,()=>draft.value?.name,busy],()=>{
-  clearTimeout(autosaveTimer);
-  if(dirty.value && !autosaveBlocked) autosaveTimer=setTimeout(()=>{if(dirty.value && !busy.value && !autosaveBlocked) save();},1800);
-});
+onMounted(()=>{autosaveTimer=setInterval(()=>{if(dirty.value && !busy.value && !autosaveBlocked) save();},20*60*1000);});
 async function openHistory() {
   error.value='';
   try {historyEntries.value=await api(`/drafts/${draft.value.id}/history`);historyOpen.value=true;}
@@ -339,7 +349,7 @@ onMounted(()=>{pollTimer=setInterval(async()=>{
     }
   }catch{/* Los errores de sesión se gestionan en el cliente API. */}
 },6000);});
-onBeforeUnmount(()=>{clearTimeout(autosaveTimer);clearInterval(pollTimer);});
+onBeforeUnmount(()=>{clearInterval(autosaveTimer);clearInterval(pollTimer);});
 async function publish() {
   if (dirty.value) {
     error.value = "Guarda los cambios antes de publicar.";
@@ -462,6 +472,7 @@ function addEmployee(e) {
   });
 }
 function select(id, additive = false) {
+  if(id && graph.value.nodes.find(n=>n.id===id)?.metadata?.pendingReview) attempt(()=>editor.commit({...graph.value,nodes:graph.value.nodes.map(n=>n.id===id ? {...n,metadata:{...n.metadata,pendingReview:false}}:n)}));
   editor.selectNode(id, additive);
   chosenEdge.value = null;
 }
@@ -573,7 +584,7 @@ function applySync() {
         ×
       </button>
     </div>
-    <div class="module-toolbar">
+    <div v-show="!toolsHidden" class="module-toolbar">
       <div class="toolbar-group">
         <span class="eyebrow">BORRADOR</span
         ><select
@@ -604,7 +615,7 @@ function applySync() {
       </div>
     </div>
     <template v-if="draft">
-      <div class="editor-tools">
+      <div v-show="!toolsHidden" class="editor-tools">
         <div class="search-box editor-person-search" @keydown.esc="locateOpen = false">
           <input v-model="locateQuery" type="search"
             aria-label="Ubicar personal en Board" placeholder="Ubicar nombre, DNI o puesto…"
@@ -649,9 +660,12 @@ function applySync() {
           ↷</button
         ><button @click="openSync" :disabled="busy">Sincronizar datos</button>
         <button @click="openHistory" :disabled="busy">Historial</button>
-        <span role="status">{{ busy ? 'Guardando / procesando…' : dirty ? 'Cambios pendientes de guardado automático' : 'Guardado automático activo' }}</span>
-        <button @click="downloadSelection" :disabled="exportingSelection || !pdfSelection.nodes.length" title="Selecciona tarjetas con Ctrl + clic o con la selección rectangular y descarga su PDF">{{ exportingSelection ? 'Generando PDF…' : `Descargar selección PDF (${pdfSelection.nodes.length})` }}</button>
+      <div class="board-inline-filters" aria-label="Filtros del Board">
+        <select v-for="(label,key) in boardFilterLabels" :key="key" v-model="boardFilters[key]" :aria-label="label"><option value="">{{ label }} · todos</option><option v-for="value in filterOptions[key]" :key="value" :value="value">{{ value }}</option></select>
+        <button @click="boardFilters={businessLine:'',area:'',branch:'',position:''}">Limpiar filtros</button>
+        <button @click="downloadSelection" :disabled="exportingSelection || !pdfSelection.nodes.length" title="Descargar las tarjetas seleccionadas en PDF">{{ exportingSelection ? 'Generando PDF…' : `PDF selección (${pdfSelection.nodes.length})` }}</button>
         <span v-if="exportProgress" role="status" aria-live="polite">{{ exportProgress }}</span>
+      </div>
       </div>
       <div v-if="historyOpen" class="modal-backdrop" @click.self="historyOpen=false">
         <section class="modal" role="dialog" aria-modal="true" aria-label="Historial del Board">
@@ -664,6 +678,7 @@ function applySync() {
         <GraphCanvas
           ref="canvas"
           :graph="displayed"
+          :highlight-ids="matchingPositions"
           :hierarchy-graph="graph"
           editable
           :collapsed="collapsed"
