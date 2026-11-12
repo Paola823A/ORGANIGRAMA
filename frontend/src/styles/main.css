@@ -10,6 +10,12 @@
   --sidebar: 228px;
   --radius: 9px;
 }
+.chart-card.pending-review { background-color: #fff3c4 !important; box-shadow: 0 0 0 2px #e0a820; }
+.board-inline-filters { display:flex; flex-wrap:wrap; gap:8px; width:100%; }
+.board-inline-filters select { width:auto; flex:1; min-width:140px; }
+.board-inline-filters select,.board-inline-filters button { font-size:11px; padding:5px 8px; min-height:30px; }
+.board-tools-toggle { font-size:10px; padding:3px 7px; margin-top:4px; }
+.chart-card.is-highlighted { background-color:#d8f4ff !important; outline:3px solid #0284c7 !important; }
 * {
   box-sizing: border-box;
 }

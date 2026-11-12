@@ -17,6 +17,7 @@ const props = defineProps({
   showNames: { type: Boolean, default: true },
   collapsed: { type: Set, default: () => new Set() },
   highlight: String,
+  highlightIds: {type:Array,default:()=>[]},
   selectedId: String,
   selectedIds: { type: Array, default: () => [] },
 });
@@ -138,7 +139,7 @@ const nodes = computed(() =>
       editable: props.editable,
       sliding: n.id === slideId.value,
       showNames: props.showNames,
-      highlight: n.id === props.highlight,
+      highlight: n.id === props.highlight || props.highlightIds.includes(n.id),
       hasChildren: parentIds.value.has(n.id),
       teamCount: teamCounts.value.get(n.id) || 0,
       collapsed: props.collapsed.has(n.id),

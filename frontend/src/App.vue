@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onBeforeUnmount, ref } from "vue";
+import { computed, onMounted, onBeforeUnmount, ref, provide } from "vue";
 import { useRoute } from "vue-router";
 import { useCompanies } from "./composables/useCompanies.js";
 import autrisaLogo from "./assets/companies/autrisa.png";
@@ -13,6 +13,8 @@ import { api } from "./services/api.js";
 import LoginPanel from "./components/LoginPanel.vue";
 const { ready,user,localMode,enabled,refresh,can } = useAuth();
 const passwordOpen = ref(false);
+const boardToolsHidden=ref(false);
+provide('boardToolsHidden',boardToolsHidden);
 const route = useRoute(),
   { companies, companyId, refreshCompanies } = useCompanies(),
   error = ref(""),
@@ -98,6 +100,7 @@ onBeforeUnmount(() => window.removeEventListener('ain-auth-expired',initialize))
             Organización <span>/</span> {{ route.meta.title }}
           </div>
           <h1>{{ route.meta.title }}</h1>
+          <button v-if="route.path==='/canva'" class="board-tools-toggle" :aria-expanded="!boardToolsHidden" @click="boardToolsHidden=!boardToolsHidden">{{ boardToolsHidden ? 'Mostrar herramientas' : 'Ocultar herramientas' }}</button>
           <p>{{ route.meta.description }}</p>
         </div>
         </div>

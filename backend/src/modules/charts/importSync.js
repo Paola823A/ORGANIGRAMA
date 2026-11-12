@@ -6,6 +6,7 @@ import {recordDraft} from './history.js';
 export function syncImportedDrafts(db,records,actor) {
   const repository=chartRepository(db),employees=employeeRepository(db);
   const ids=new Set(records.map(r=>r.id));
+  const incoming=new Map(records.map(r=>[r.id,r]));
   const touched=new Set(db.prepare('SELECT DISTINCT company_id FROM employees').all().map(r=>r.company_id));
   for(const row of db.prepare('SELECT d.id,o.company_id,c.name AS company FROM chart_drafts d JOIN organization_charts o ON o.id=d.chart_id JOIN companies c ON c.id=o.company_id').all()) {
     if(!touched.has(row.company_id)) continue;
@@ -21,9 +22,12 @@ export function syncImportedDrafts(db,records,actor) {
       }
       if(!e || !ids.has(e.id)) return n;
       const status=e.employment_status;
-      if(n.metadata?.employmentStatus===status && n.employeeId===e.id) return n;
+      const fields=incoming.get(e.id)?.changes || [];
+      if(n.metadata?.employmentStatus===status && n.employeeId===e.id && !fields.length) return n;
       changed=true;
-      return {...n,employeeId:e.id,metadata:{...n.metadata,employmentStatus:status}};
+      const metadata={...n.metadata,employmentStatus:status,pendingReview:true,updatedFields:fields,updatedAt:new Date().toISOString()};
+      for(const [field,column] of [['company','company'],['businessLine','business_line'],['branch','branch'],['area','area'],['dni','dni']]) if(fields.includes(field)) metadata[field]=e[column];
+      return {...n,employeeId:e.id,...(fields.includes('fullName') ? {title:e.full_name}:{}),...(fields.includes('positionName') ? {subtitle:e.position_name}:{}),metadata};
     });
     const newPeople=employees.active(row.company_id).filter(e=>ids.has(e.id) && !present.has(e.id));
     const bottom=Math.max(0,...nodes.map(n=>n.position.y+n.height))+100;

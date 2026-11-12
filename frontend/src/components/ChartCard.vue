@@ -24,6 +24,7 @@ const labels = {
       'is-sliding': data.sliding,
       'is-ceased': data.node.metadata.employmentStatus === 'CEASED',
       'is-visual-copy': data.node.metadata.visualOnly,
+      'pending-review': data.editable && data.node.metadata.pendingReview,
     }"
     :style="{
       ...cardTextStyle(data.node.style),
