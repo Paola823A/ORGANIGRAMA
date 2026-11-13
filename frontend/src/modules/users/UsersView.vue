@@ -7,7 +7,7 @@ const { user,localMode } = useAuth(), { companies } = useCompanies();
 const users = ref([]), error = ref(''), notice = ref(''), busy = ref(false), form = ref(null), query = ref(''), employees = ref([]);
 const searchText = ref(''), companyFilter = ref(''), moduleFilter = ref(''), statusFilter = ref(''), page = ref(0), deleting = ref(null);
 const modalElement = ref(null);
-const shareCredentials=ref(null);
+const shareCredentials=ref(null),credentialHelp=ref(false);
 async function copyCredentials() {
   try {await navigator.clipboard.writeText(`Usuario: ${shareCredentials.value.username}\nContraseña: ${shareCredentials.value.password}`);notice.value='Usuario y contraseña copiados.';}
   catch{error.value='El navegador no permitió copiar. Intenta nuevamente.';}
@@ -24,7 +24,7 @@ const filtered = computed(()=>users.value.filter(account=>{
 const rows = computed(()=>filtered.value.slice(page.value*20,page.value*20+20));
 watch([searchText,companyFilter,moduleFilter,statusFilter],()=>page.value=0);
 async function load() { users.value = await api('/auth/users'); }
-function edit(account) { notice.value = '';error.value = '';deleting.value=null;form.value = account ? {...account,permissions:account.permissions.map(p=>({...p})),password:''} : {username:'',displayName:'',employeeId:'',password:'',permissions:[],status:'APPROVED'};employees.value = [];query.value = ''; }
+function edit(account) { credentialHelp.value=false; notice.value = '';error.value = '';deleting.value=null;form.value = account ? {...account,permissions:account.permissions.map(p=>({...p})),password:''} : {username:'',displayName:'',employeeId:'',password:'',permissions:[],status:'APPROVED'};employees.value = [];query.value = ''; }
 async function search() { try { employees.value = (await api(`/employees?q=${encodeURIComponent(query.value)}&limit=30`)).items; } catch(e) { error.value = e.message; } }
 function checked(companyId,module) { return form.value.permissions.some(p=>p.companyId===companyId && p.module===module); }
 function toggle(companyId,module,value) { form.value.permissions = form.value.permissions.filter(p=>p.companyId!==companyId || p.module!==module);if(value) form.value.permissions.push({companyId,module}); }
@@ -67,7 +67,7 @@ onMounted(async()=>{if(user.value?.role==='OWNER') try {await load();} catch(e) 
             <select v-model="statusFilter" aria-label="Filtrar usuarios por estado"><option value="">Todos los estados</option><option value="APPROVED">Activos</option><option value="DISABLED">Deshabilitados</option></select>
           </div>
           <div class="user-table-scroll"><table class="permissions-table user-table"><caption>{{ filtered.length }} usuarios</caption><thead><tr><th>Nombre</th><th>Usuario</th><th>Estado</th><th>Empresas y módulos</th><th>Acciones</th></tr></thead><tbody>
-            <tr v-for="account in rows" :key="account.id"><td>{{ account.displayName }}</td><td>{{ account.username }}</td><td>{{ account.role==='OWNER' ? 'Creador' : account.status==='APPROVED' ? 'Activo':'Deshabilitado' }}</td><td><span v-if="account.role==='OWNER'">Todas las empresas y módulos</span><template v-else><div v-for="p in account.permissions" :key="p.companyId+p.module">{{ companyName(p.companyId) }} · {{ moduleName(p.module) }}</div><span v-if="!account.permissions.length">Sin módulos asignados</span></template></td><td><div v-if="account.role!=='OWNER'" class="toolbar-group"><button @click="edit(account)">Editar</button><button class="danger" :disabled="busy" @click="deleting=account">Eliminar</button></div><span v-else>Cuenta principal</span></td></tr>
+            <tr v-for="account in rows" :key="account.id"><td>{{ account.displayName }}</td><td>{{ account.username }}</td><td>{{ account.role==='OWNER' ? 'Creador' : account.status==='APPROVED' ? 'Activo':'Deshabilitado' }}</td><td><span v-if="account.role==='OWNER'">Todas las empresas y módulos</span><template v-else><div v-for="p in account.permissions" :key="p.companyId+p.module">{{ companyName(p.companyId) }} · {{ moduleName(p.module) }}</div><span v-if="!account.permissions.length">Sin módulos asignados</span></template></td><td><div v-if="account.role!=='OWNER'" class="toolbar-group"><button @click="edit(account)">Editar</button><button @click="edit(account); credentialHelp=true">Copiar acceso</button><button class="danger" :disabled="busy" @click="deleting=account">Eliminar</button></div><span v-else>Cuenta principal</span></td></tr>
             <tr v-if="!rows.length"><td colspan="5">No hay usuarios con estos filtros.</td></tr>
           </tbody></table></div>
           <div class="pagination"><button :disabled="page===0" @click="page--">Anterior</button><span>Página {{ page+1 }} de {{ Math.max(1,Math.ceil(filtered.length/20)) }}</span><button :disabled="(page+1)*20>=filtered.length" @click="page++">Siguiente</button></div>
@@ -75,7 +75,7 @@ onMounted(async()=>{if(user.value?.role==='OWNER') try {await load();} catch(e) 
         </div>
         <div v-if="form" class="modal-backdrop" @click.self="!busy && (form=null)" @keydown.esc="!busy && (form=null)">
         <form ref="modalElement" class="modal access-card user-account-modal" role="dialog" aria-modal="true" aria-labelledby="account-modal-title" @submit.prevent="save">
-          <h3 id="account-modal-title">{{ form.id ? 'Editar usuario' : 'Crear usuario' }}</h3>
+          <h3 id="account-modal-title">{{ form.id ? 'Editar usuario' : 'Crear usuario' }}</h3><p v-if="credentialHelp">Para copiar el acceso, define una nueva contraseña y guarda. La contraseña anterior no se puede recuperar.</p>
           <p v-if="error" class="alert error" role="alert">{{ error }}</p>
           <template v-if="!form.id">
             <label>Buscar personal de la base</label>
