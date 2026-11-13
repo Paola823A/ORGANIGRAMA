@@ -96,7 +96,12 @@ const displayed = computed(() =>
     const visible=visibleGraph(reflowVisibleGraph(graph.value, {}, collapsed.value), {}, collapsed.value);
     const actualFilters={...boardFilters.value,position:''};
     if(!Object.values(actualFilters).some(Boolean)) return visible;
-    const nodes=visible.nodes.filter(n=>n.type==='EMPLOYEE' && matchesBoard(n,actualFilters)),ids=new Set(nodes.map(n=>n.id));
+    const ids=new Set();
+    for(const node of visible.nodes) if(node.type==='EMPLOYEE' && matchesBoard(node,actualFilters)) {
+      ids.add(node.id);
+      for(const ancestor of graphAncestors(visible,node.id)) ids.add(ancestor);
+    }
+    const nodes=visible.nodes.filter(n=>ids.has(n.id));
     return {...visible,nodes,edges:visible.edges.filter(e=>ids.has(e.source)&&ids.has(e.target))};
   },
 );

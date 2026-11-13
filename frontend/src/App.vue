@@ -100,14 +100,13 @@ onBeforeUnmount(() => window.removeEventListener('ain-auth-expired',initialize))
             Organización <span>/</span> {{ route.meta.title }}
           </div>
           <h1>{{ route.meta.title }}</h1>
-          <button v-if="route.path==='/canva'" class="board-tools-toggle" :aria-expanded="!boardToolsHidden" @click="boardToolsHidden=!boardToolsHidden">{{ boardToolsHidden ? 'Mostrar herramientas' : 'Ocultar herramientas' }}</button>
-          <p>{{ route.meta.description }}</p>
         </div>
         </div>
         <div v-if="companyLogo" class="company-logo" :class="companyLogo.brand">
           <img :src="companyLogo.src" :alt="`Logo de ${companyLogo.name}`" />
         </div>
         <div v-else class="header-tag">GESTIÓN DE PERSONAS</div>
+        <button v-if="route.path==='/canva'" class="board-tools-toggle" :title="boardToolsHidden ? 'Mostrar herramientas' : 'Ocultar herramientas'" :aria-label="boardToolsHidden ? 'Mostrar herramientas' : 'Ocultar herramientas'" :aria-expanded="!boardToolsHidden" @click="boardToolsHidden=!boardToolsHidden">{{ boardToolsHidden ? '▾' : '▴' }}</button>
       </header>
       <div v-if="error" class="alert error" role="alert">
         {{ error }} <button @click="loadCompanies">Reintentar conexión</button>
