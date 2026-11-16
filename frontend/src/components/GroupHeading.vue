@@ -5,7 +5,7 @@ defineProps({ data: Object });
 </script>
 <template>
   <section class="group-heading" :class="{ 'is-highlighted': data.highlight }"
-    :style="{ ...cardTextStyle(data.node.style), width: data.node.width + 'px', height: data.node.height + 'px', color: data.node.style.textColor,
+    :style="{ ...cardTextStyle({textAlign:'center',...data.node.style}), width: data.node.width + 'px', height: data.node.height + 'px', color: data.node.style.textColor,
       backgroundColor: data.node.style.backgroundColor, borderColor: data.node.style.borderColor, ...groupBaseStyle(data.node) }">
     <CardHandles :editable="data.editable" />
     <strong class="group-heading-title" :title="data.node.title">{{ data.node.title }}</strong>

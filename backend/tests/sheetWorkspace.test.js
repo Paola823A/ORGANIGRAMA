@@ -1,0 +1,24 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {openWorkspace,updateWorkspace,workspaceView,serializeWorkspace} from '../../frontend/src/services/sheetWorkspace.js';
+import {manualNode} from './helpers.js';
+test('vistas independientes: posiciones y conexiones aisladas, contenido compartido y persistencia sin recursión',()=>{
+ const original={nodes:[manualNode('a',{type:'EMPLOYEE',employeeId:'a',title:'Ana',subtitle:'Jefe',position:{x:900,y:700},metadata:{businessLine:'Ventas',branch:'Lima'}}),manualNode('b',{type:'EMPLOYEE',employeeId:'b',title:'Beto',metadata:{businessLine:'Ventas',branch:'Lima'}})],edges:[{id:'original-edge',source:'a',target:'b'}]};
+ const workspace=openWorkspace(original),sheet=workspaceView(workspace,'Ventas','AUTRISA');
+ const a=sheet.nodes.find(n=>n.id==='a');a.position={x:30,y:40};a.title='Ana actualizada';sheet.edges=[];
+ updateWorkspace(workspace,'Ventas',sheet);
+ const general=workspaceView(workspace,'');
+ assert.deepEqual(general.nodes[0].position,{x:900,y:700});assert.equal(general.edges.length,1);assert.equal(general.nodes[0].title,'Ana actualizada');
+ const saved=serializeWorkspace(workspace),reopened=openWorkspace(saved),again=workspaceView(reopened,'Ventas','AUTRISA');
+ assert.deepEqual(again.nodes.find(n=>n.id==='a').position,{x:30,y:40});assert.equal(again.edges.length,0);
+ general.nodes[0].subtitle='Gerente';general.nodes[0].position={x:1000,y:1000};updateWorkspace(reopened,'',general);
+ const updated=workspaceView(reopened,'Ventas','AUTRISA');assert.equal(updated.nodes.find(n=>n.id==='a').subtitle,'Gerente');assert.deepEqual(updated.nodes.find(n=>n.id==='a').position,{x:30,y:40});
+ assert.ok(!again.nodes.some(n=>n.metadata.sheetViews));
+ assert.equal(original.nodes[0].title,'Ana');
+ const newcomer=manualNode('new',{type:'EMPLOYEE',employeeId:'new',title:'Ingreso',metadata:{businessLine:'Ventas',branch:'Cusco'}});
+ reopened.general.nodes.push(newcomer);
+ const withNew=workspaceView(reopened,'Ventas','AUTRISA');
+ assert.ok(withNew.nodes.some(n=>n.id==='new'));
+ assert.deepEqual(withNew.nodes.find(n=>n.id==='a').position,{x:30,y:40});
+ assert.equal(workspaceView(reopened,'Ventas','AUTRISA').nodes.filter(n=>n.id==='new').length,1);
+});

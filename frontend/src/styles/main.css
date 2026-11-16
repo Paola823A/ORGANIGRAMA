@@ -10,6 +10,9 @@
   --sidebar: 228px;
   --radius: 9px;
 }
+.business-sheet-tabs { display:flex; gap:4px; overflow-x:auto; flex-shrink:0; padding:4px 2px; border-bottom:1px solid var(--line); }
+.business-sheet-tabs button { white-space:nowrap; border-radius:6px 6px 0 0; padding:7px 13px; font-size:12px; }
+.business-sheet-tabs button.active { background:var(--accent); color:white; border-color:var(--accent); }
 .chart-card.pending-review { background-color: #fff3c4 !important; box-shadow: 0 0 0 2px #e0a820; }
 .board-inline-filters { display:flex; flex-wrap:wrap; gap:8px; width:100%; }
 .board-inline-filters select { width:auto; flex:1; min-width:140px; }

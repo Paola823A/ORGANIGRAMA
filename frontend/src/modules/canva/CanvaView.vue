@@ -21,7 +21,16 @@ import { applyBrandTheme, companyTheme } from "../../../../shared/theme.js";
 import { restoreCompactedPoint } from "../../services/compactLayout.js";
 import { exportGraph } from "../../services/export.js";
 import { selectedGraph } from "../../services/exportSelection.js";
-import {boardFilterLabels,boardOptions,matchesBoard} from '../../services/boardFilters.js';
+import {boardFilterLabels,boardOptions,matchesBoard,positionCounts} from '../../services/boardFilters.js';
+import {businessLines} from '../../services/businessSheets.js';
+import {openWorkspace,updateWorkspace,workspaceView,serializeWorkspace} from '../../services/sheetWorkspace.js';
+let workspace=null;
+const workspaceDirty=ref(false),allSheets=ref([]);
+function loadWorkspace(value) {
+ workspace=openWorkspace(applyBrandTheme(value,company.value?.name));activeSheet.value='';workspaceDirty.value=false;
+ allSheets.value=businessLines(workspace.general);editor.load(workspaceView(workspace,''));
+}
+const activeSheet=ref('');
 const boardFilters=ref({businessLine:'',area:'',branch:'',position:''});
 const toolsHidden=inject('boardToolsHidden',ref(false));
 const exportingSelection = ref(false), exportProgress = ref('');
@@ -86,7 +95,7 @@ const chartId = computed(() => company.value?.chart_id);
 const dirty = computed(
   () =>
     !!draft.value &&
-    (editor.dirty.value || draft.value.name !== savedName.value),
+    (workspaceDirty.value || editor.dirty.value || draft.value.name !== savedName.value),
 );
 const collapsed = computed(
   () => new Set(graph.value.nodes.filter((n) => n.collapsed).map((n) => n.id)),
@@ -106,7 +115,18 @@ const displayed = computed(() =>
   },
 );
 const filterOptions=computed(()=>boardOptions(graph.value.nodes,boardFilters.value));
+const sheets=computed(()=>allSheets.value);
+async function chooseSheet(line) {
+ if(!workspace || line===activeSheet.value) return;
+ workspaceDirty.value=workspaceDirty.value || editor.dirty.value;
+ updateWorkspace(workspace,activeSheet.value,graph.value);
+ allSheets.value=businessLines(workspace.general);
+ activeSheet.value=line;boardFilters.value={businessLine:'',area:'',branch:'',position:''};editor.selectNode(null);chosenEdge.value=null;
+ editor.load(workspaceView(workspace,line,company.value?.name));
+ await nextTick();canvas.value?.initialView();
+}
 const matchingPositions=computed(()=>boardFilters.value.position ? displayed.value.nodes.filter(n=>n.type==='EMPLOYEE' && matchesBoard(n,{position:boardFilters.value.position})).map(n=>n.id):[]);
+const positionTotals=computed(()=>positionCounts(displayed.value.nodes,boardFilters.value));
 watch(companyId,()=>{boardFilters.value={businessLine:'',area:'',branch:'',position:''};});
 const pdfSelection = computed(()=>selectedGraph(displayed.value,selectedIds.value));
 async function downloadSelection() {
@@ -253,7 +273,7 @@ async function openDraft(id, guard = true, event = null) {
     if (key !== draftLoadRequest || currentChart !== chartId.value) return;
     draft.value = value;
     savedName.value = value.name;
-    editor.load(applyBrandTheme(value,company.value?.name));
+    loadWorkspace(value);
     await nextTick();
     canvas.value?.initialView();
   } catch (e) {
@@ -286,7 +306,7 @@ async function createDraft() {
     if (value.chart_id !== chartId.value) return;
     draft.value = value;
     savedName.value = value.name;
-    editor.load(applyBrandTheme(value,company.value?.name));
+    loadWorkspace(value);
     if (creatingMode === "master") editor.commit(autoLayout(graph.value));
     dialog.value = "";
     await refreshLists();
@@ -303,20 +323,24 @@ async function save() {
   busy.value = true;
   error.value = "";
   const savingId = draft.value.id;
+  const savingSheet=activeSheet.value;
   const submittedGraph = JSON.stringify(graph.value);
+  updateWorkspace(workspace,activeSheet.value,graph.value);
+  const payload=serializeWorkspace(workspace);
   try {
     const value = await api(`/drafts/${draft.value.id}`, {
       method: "PUT",
       body: {
         name: draft.value.name,
         content_revision: draft.value.content_revision,
-        ...graph.value,
+        ...payload,
       },
     });
     if (draft.value?.id !== savingId) return;
     draft.value = { ...value, name: draft.value.name };
     savedName.value = value.name;
-    editor.saved.value = submittedGraph;
+    if(activeSheet.value===savingSheet) editor.saved.value = submittedGraph;
+    workspaceDirty.value=activeSheet.value!==savingSheet;
     notice.value = "Borrador guardado.";
     await refreshLists();
   } catch (e) {
@@ -340,7 +364,7 @@ async function restoreHistory(entry) {
   busy.value=true;error.value='';
   try {
     const value=await api(`/drafts/${draft.value.id}/history/${entry.id}/restore`,{method:'POST',body:{content_revision:draft.value.content_revision}});
-    draft.value=value;savedName.value=value.name;editor.load(applyBrandTheme(value,company.value?.name));historyOpen.value=false;notice.value='Estado restaurado.';
+    draft.value=value;savedName.value=value.name;loadWorkspace(value);historyOpen.value=false;notice.value='Estado restaurado.';
   }catch(e){error.value=e.message;}finally{busy.value=false;}
 }
 onMounted(()=>{pollTimer=setInterval(async()=>{
@@ -350,7 +374,7 @@ onMounted(()=>{pollTimer=setInterval(async()=>{
   try {
     const value=await api(`/drafts/${id}`);
     if(draft.value?.id===id && !dirty.value && !busy.value && value.content_revision!==draft.value.content_revision) {
-      draft.value=value;savedName.value=value.name;editor.load(applyBrandTheme(value,company.value?.name));notice.value='Board actualizado con los cambios de la base o de otro editor.';
+      draft.value=value;savedName.value=value.name;loadWorkspace(value);notice.value='Board actualizado con los cambios de la base o de otro editor.';
     }
   }catch{/* Los errores de sesión se gestionan en el cliente API. */}
 },6000);});
@@ -666,7 +690,7 @@ function applySync() {
         ><button @click="openSync" :disabled="busy">Sincronizar datos</button>
         <button @click="openHistory" :disabled="busy">Historial</button>
       <div class="board-inline-filters" aria-label="Filtros del Board">
-        <select v-for="(label,key) in boardFilterLabels" :key="key" v-model="boardFilters[key]" :aria-label="label"><option value="">{{ label }} · todos</option><option v-for="value in filterOptions[key]" :key="value" :value="value">{{ value }}</option></select>
+        <select v-for="(label,key) in boardFilterLabels" :key="key" v-model="boardFilters[key]" :aria-label="label"><option value="">{{ label }} · todos</option><option v-for="value in filterOptions[key]" :key="value" :value="value">{{ key==='position' ? `${value.toLocaleUpperCase('es')} · ${positionTotals[value] || 0} personas` : value }}</option></select>
         <button @click="boardFilters={businessLine:'',area:'',branch:'',position:''}">Limpiar filtros</button>
         <button @click="downloadSelection" :disabled="exportingSelection || !pdfSelection.nodes.length" title="Descargar las tarjetas seleccionadas en PDF">{{ exportingSelection ? 'Generando PDF…' : `PDF selección (${pdfSelection.nodes.length})` }}</button>
         <span v-if="exportProgress" role="status" aria-live="polite">{{ exportProgress }}</span>
@@ -766,6 +790,10 @@ function applySync() {
           </button>
         </aside>
       </div>
+      <nav class="business-sheet-tabs" aria-label="Hojas de Board" role="tablist">
+        <button role="tab" :aria-selected="!activeSheet" :class="{active:!activeSheet}" @click="chooseSheet('')">GENERAL</button>
+        <button v-for="line in sheets" :key="line" role="tab" :aria-selected="activeSheet===line" :class="{active:activeSheet===line}" @click="chooseSheet(line)">{{ line }}</button>
+      </nav>
     </template>
     <div v-else class="empty-state">
       <div class="empty-symbol">◇</div>

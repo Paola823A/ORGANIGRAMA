@@ -130,7 +130,7 @@ const labels = computed(() => Object.fromEntries(Object.entries(allLabels).filte
       <details>
         <summary>Clasificación y estado</summary>
         <label
-          >Giro<input
+          >Línea de negocio<input
             v-model="form.metadata.businessLine"
             maxlength="500" /></label
         ><label class="check-line"

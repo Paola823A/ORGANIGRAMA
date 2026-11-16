@@ -1,5 +1,14 @@
-import {normalize} from '../../../shared/graph.js';
-export const boardFilterLabels={businessLine:'Giro',area:'Área',branch:'Sede',position:'Puesto'};
+import {normalize,countPeople} from '../../../shared/graph.js';
+export function positionCounts(nodes,filters={}) {
+ const groups=new Map();
+ for(const node of nodes) if(node.type==='EMPLOYEE' && matchesBoard(node,filters,'position')) {
+  const key=positionGroup(node.subtitle);
+  if(!groups.has(key)) groups.set(key,[]);
+  groups.get(key).push(node);
+ }
+ return Object.fromEntries([...groups].map(([key,people])=>[key,countPeople({nodes:people})]));
+}
+export const boardFilterLabels={businessLine:'Línea de negocio',area:'Área',branch:'Sede',position:'Puesto'};
 export function positionGroup(value) {
  const text=normalize(value);
  for(const [pattern,label] of [[/JEF/,'Jefes'],[/SUPERVIS/,'Supervisores'],[/AUXILIAR/,'Auxiliares'],[/TECNIC/,'Técnicos'],[/GERENT/,'Gerentes'],[/ASISTENT/,'Asistentes'],[/ANALISTA/,'Analistas'],[/COORDIN/,'Coordinadores'],[/PRACTIC/,'Practicantes']]) if(pattern.test(text)) return label;

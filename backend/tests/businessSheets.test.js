@@ -1,0 +1,21 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {businessSheet,businessLines} from '../../frontend/src/services/businessSheets.js';
+import {manualNode} from './helpers.js';
+import {validateGraph,countPeople} from '../../shared/graph.js';
+test('hojas por giro: sedes debajo de línea, personal y jefes compartidos con el general, sin modificar Board',()=>{
+ const employee=(id,branch,line='Post venta')=>manualNode(id,{type:'EMPLOYEE',employeeId:id,title:id,subtitle:'Puesto',metadata:{branch,businessLine:line}});
+ const graph={nodes:[employee('boss','Lima'),manualNode('junction',{type:'JUNCTION'}),employee('worker','Lima'),employee('cusco','Cusco'),employee('other','Lima','Ventas')],edges:[{id:'1',source:'boss',target:'junction'},{id:'2',source:'junction',target:'worker'}]};
+ const before=JSON.stringify(graph),sheet=businessSheet(graph,'Post venta','INCAMOTORS');
+ validateGraph(sheet);
+ assert.deepEqual(businessLines(graph),['Post venta','Ventas']);
+ assert.equal(countPeople(sheet),3);
+ assert.ok(!sheet.nodes.some(n=>n.id==='other'));
+ assert.deepEqual(sheet.nodes.filter(n=>n.type==='BRANCH').map(n=>n.title),['Cusco','Lima']);
+ assert.ok(sheet.edges.some(e=>e.source==='boss' && e.target==='worker'));
+ const root=sheet.nodes.find(n=>n.type==='BUSINESS_LINE');
+ assert.equal(root.style.textAlign,'center');
+ for(const branch of sheet.nodes.filter(n=>n.type==='BRANCH')) assert.ok(branch.position.y>root.position.y);
+ assert.equal(JSON.stringify(graph),before);
+ assert.deepEqual(businessSheet(graph,'Post venta','INCAMOTORS'),sheet);
+});

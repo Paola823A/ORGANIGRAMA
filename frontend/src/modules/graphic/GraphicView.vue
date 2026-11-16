@@ -8,8 +8,11 @@ import { exportGraph } from "../../services/export.js";
 import { reflowVisibleGraph } from "../../services/layout.js";
 import { applyBrandTheme } from "../../../../shared/theme.js";
 import GraphCanvas from "../../components/GraphCanvas.vue";
-import {boardOptions,positionGroup} from '../../services/boardFilters.js';
+import {boardOptions,positionGroup,positionCounts} from '../../services/boardFilters.js';
 import { useAuth } from "../../composables/useAuth.js";
+import {businessLines,businessSheet} from '../../services/businessSheets.js';
+import {openWorkspace,workspaceView} from '../../services/sheetWorkspace.js';
+const activeSheet=ref('');
 const { can } = useAuth();
 const positionFilter=ref('');
 const matchingPositions=computed(()=>positionFilter.value ? displayed.value.nodes.filter(n=>n.type==='EMPLOYEE' && positionGroup(n.subtitle)===positionFilter.value).map(n=>n.id):[]);
@@ -35,13 +38,20 @@ const company = computed(() =>
     companies.value.find((c) => c.id === companyId.value),
   ),
   chartId = computed(() => company.value?.chart_id);
-const hierarchy = computed(() => visibleGraph(graph.value, filters.value));
+const sheets=computed(()=>businessLines(graph.value));
+const sheetGraph=computed(()=>activeSheet.value ? workspaceView(openWorkspace(graph.value),activeSheet.value,company.value?.name):graph.value);
+async function chooseSheet(line) {
+ activeSheet.value=line;filters.value={businessLine:'',branch:'',area:''};positionFilter.value='';collapsed.value=new Set();
+ await nextTick();canvas.value?.initialView();
+}
+const hierarchy = computed(() => visibleGraph(sheetGraph.value, filters.value));
 const displayed = computed(() => {
   const source = autoReflow.value || collapsed.value.size
-    ? reflowVisibleGraph(graph.value, filters.value, collapsed.value) : graph.value;
+    ? reflowVisibleGraph(sheetGraph.value, filters.value, collapsed.value) : sheetGraph.value;
   return visibleGraph(source, filters.value, collapsed.value);
 });
 const peopleCount = computed(() => countPeople(displayed.value));
+const positionTotals=computed(()=>positionCounts(displayed.value.nodes,filters.value));
 const results = computed(() => {
   const q = normalize(query.value);
   return q
@@ -54,7 +64,7 @@ const results = computed(() => {
         .slice(0, 40)
     : [];
 });
-const filterOptions=computed(()=>boardOptions(graph.value.nodes,filters.value));
+const filterOptions=computed(()=>boardOptions(sheetGraph.value.nodes,filters.value));
 let request = 0,
   versionRequest = 0,
   timer;
@@ -63,6 +73,7 @@ watch(
   async (id) => {
     const key = ++request;
     versionRequest++;
+    activeSheet.value='';
     versions.value = [];
     versionId.value = "";
     version.value = null;
@@ -93,6 +104,7 @@ watch(versionId, async (id) => {
     const value = await api(`/charts/${currentChart}/versions/${id}`);
     if (key !== versionRequest || currentChart !== chartId.value) return;
     version.value = value;
+    activeSheet.value='';
     graph.value = applyBrandTheme(compactJunctions(value.snapshot),company.value?.name);
     reset();
     await nextTick();
@@ -104,10 +116,11 @@ watch(versionId, async (id) => {
   }
 });
 function reset() {
+  positionFilter.value='';
   autoReflow.value = false;
   filters.value = { businessLine: "", branch: "", area: "" };
   collapsed.value = new Set(
-    graph.value.nodes.filter((n) => n.collapsed).map((n) => n.id),
+    sheetGraph.value.nodes.filter((n) => n.collapsed).map((n) => n.id),
   );
   showNames.value = true;
   query.value = "";
@@ -122,9 +135,10 @@ function toggle(id) {
   autoReflow.value = true;
 }
 function locate(node) {
+  if(activeSheet.value && normalize(node.metadata?.businessLine)!==normalize(activeSheet.value)) activeSheet.value='';
   filters.value = { businessLine: "", branch: "", area: "" };
   const copy = new Set(collapsed.value);
-  for (const id of graphAncestors(graph.value, node.id)) copy.delete(id);
+  for (const id of graphAncestors(sheetGraph.value, node.id)) copy.delete(id);
   collapsed.value = copy;
   highlight.value = node.id;
   searchOpen.value = false;
@@ -262,7 +276,7 @@ function date(value) {
         </div>
         <select
           v-for="[key, label] in [
-            ['businessLine', 'Giros'],
+            ['businessLine', 'Líneas de negocio'],
             ['branch', 'Sedes'],
             ['area', 'Áreas'],
           ]"
@@ -284,7 +298,7 @@ function date(value) {
           <strong>{{ peopleCount }}</strong>
           <span>{{ peopleCount === 1 ? "Persona visible" : "Personas visibles" }}</span>
         </div>
-        <select v-model="positionFilter" aria-label="Puesto"><option value="">Puesto · todos</option><option v-for="value in filterOptions.position" :key="value" :value="value">{{ value }}</option></select>
+        <select v-model="positionFilter" aria-label="Puesto"><option value="">Puesto · todos</option><option v-for="value in filterOptions.position" :key="value" :value="value">{{ value.toLocaleUpperCase('es') }} · {{ positionTotals[value] || 0 }} personas</option></select>
         <label class="check-line"
           ><input type="checkbox" v-model="showNames" />Nombres</label
         ><button
@@ -295,7 +309,7 @@ function date(value) {
           "
         >
           Expandir todo</button
-        ><button @click="reset">Restablecer</button>
+        ><button @click="reset">Restablecer vista y filtros</button>
       </div>
       <div v-if="exporting" class="export-progress" role="status">
         {{ progress }}
@@ -314,6 +328,10 @@ function date(value) {
           No hay tarjetas que cumplan estos filtros.
         </div>
       </div>
+      <nav class="business-sheet-tabs" aria-label="Hojas del organigrama" role="tablist">
+        <button role="tab" :aria-selected="!activeSheet" :class="{active:!activeSheet}" @click="chooseSheet('')">GENERAL</button>
+        <button v-for="line in sheets" :key="line" role="tab" :aria-selected="activeSheet===line" :class="{active:activeSheet===line}" @click="chooseSheet(line)">{{ line }}</button>
+      </nav>
       <footer class="graphic-footer">
         <span
           ><span class="status-dot"></span>{{ company?.name }} · V{{

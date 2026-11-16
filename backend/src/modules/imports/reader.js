@@ -33,7 +33,7 @@ const HEADERS = {
   fullName: "APELLIDOS Y NOMBRES",
   area: "AREA",
   positionName: "PUESTO",
-  businessLine: "GIRO",
+  businessLine: "LINEA DE NEGOCIO",
   supervisorDni: "DNI ENCARGADO",
 };
 
@@ -135,7 +135,7 @@ export function readWorkbook(buffer) {
     for (const [field, col] of Object.entries(mapping)) {
       headers[field] = cellText(sheet[`${col}3`]);
       assert(
-        normalize(headers[field]) === HEADERS[field],
+        normalize(headers[field]) === HEADERS[field] || field==='businessLine' && normalize(headers[field])==='GIRO',
         `Encabezado incorrecto en ${sheetName}!${col}3. Se esperaba ${HEADERS[field]}.`,
       );
     }
