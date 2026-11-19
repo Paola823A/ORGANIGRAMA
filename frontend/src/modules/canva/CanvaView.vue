@@ -325,15 +325,15 @@ async function save() {
   const savingId = draft.value.id;
   const savingSheet=activeSheet.value;
   const submittedGraph = JSON.stringify(graph.value);
-  updateWorkspace(workspace,activeSheet.value,graph.value);
-  const payload=serializeWorkspace(workspace);
   try {
+    updateWorkspace(workspace,activeSheet.value,graph.value);
+    const payload=serializeWorkspace(workspace);
     const value = await api(`/drafts/${draft.value.id}`, {
       method: "PUT",
       body: {
+        ...payload,
         name: draft.value.name,
         content_revision: draft.value.content_revision,
-        ...payload,
       },
     });
     if (draft.value?.id !== savingId) return;

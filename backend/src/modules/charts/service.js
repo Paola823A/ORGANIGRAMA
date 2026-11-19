@@ -60,11 +60,13 @@ export function chartService(db) {
       throw new AppError(e.message);
     }
     const getEmployee = db.prepare("SELECT 1 FROM employees WHERE id=?");
-    for (const n of graph.nodes)
+    const allNodes=[...graph.nodes];
+    for(const node of graph.nodes) for(const sheet of Object.values(node.metadata?.sheetViews || {})) allNodes.push(...sheet.nodes);
+    for (const n of allNodes)
       if (n.employeeId)
         assert(
           getEmployee.get(n.employeeId),
-          "El empleado asociado no existe.",
+          `El empleado asociado a la tarjeta ${n.id} no existe.`,
         );
   }
   function createDraft(chartId, options = {}) {

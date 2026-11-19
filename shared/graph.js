@@ -53,7 +53,7 @@ export function compactJunctions(graph) {
     position: { x: node.position.x + node.width / 2 - 4, y: node.position.y + node.height / 2 - 4 },
   }) };
 }
-export function validateGraph(graph) {
+export function validateGraph(graph, nestedSheet = false) {
   if (!graph || !Array.isArray(graph.nodes) || !Array.isArray(graph.edges))
     throw new Error("El grafo requiere nodos y conexiones.");
   const { nodes, edges } = graph;
@@ -110,13 +110,26 @@ export function validateGraph(graph) {
     for (const key of ["bold", "italic", "strikethrough"])
       if (style[key] != null && typeof style[key] !== "boolean")
         throw new Error("Formato de texto inválido.");
-    if (
-      !n.metadata ||
-      typeof n.metadata !== "object" ||
-      Array.isArray(n.metadata) ||
-      JSON.stringify(n.metadata).length > 5000
-    )
-      throw new Error("Metadatos inválidos.");
+    const context=`tarjeta ${n.id} (${n.title.slice(0,80)})`;
+    if(!n.metadata || typeof n.metadata!=='object' || Array.isArray(n.metadata))
+      throw new Error(`Metadatos inválidos en ${context}: se requiere un objeto JSON.`);
+    const {sheetViews,...cardMetadata}=n.metadata;
+    let encoded;
+    try {encoded=JSON.stringify(cardMetadata);} catch {throw new Error(`Metadatos inválidos en ${context}: no se pueden serializar a JSON.`);}
+    if(encoded.length>5000) throw new Error(`Metadatos inválidos en ${context}: los datos de la tarjeta superan 5000 caracteres (${encoded.length}).`);
+    if(sheetViews!==undefined) {
+      if(nestedSheet) throw new Error(`Metadatos inválidos en ${context}: una vista no puede contener otras vistas.`);
+      if(!sheetViews || typeof sheetViews!=='object' || Array.isArray(sheetViews)) throw new Error(`Vistas inválidas en ${context}: se requiere un objeto por línea de negocio.`);
+      const entries=Object.entries(sheetViews);
+      if(entries.length>100) throw new Error(`Vistas inválidas en ${context}: máximo 100 líneas de negocio.`);
+      let size;
+      try {size=JSON.stringify(sheetViews).length;} catch {throw new Error(`Vistas inválidas en ${context}: estructura JSON no serializable.`);}
+      if(size>12*1024*1024) throw new Error(`Vistas inválidas en ${context}: superan el límite de 12 MB.`);
+      for(const [name,sheet] of entries) {
+        if(!name.trim() || name.length>500) throw new Error(`Nombre de vista inválido en ${context}.`);
+        try {validateGraph(sheet,true);} catch(error) {throw new Error(`Vista «${name}», ${context}: ${error.message}`);}
+      }
+    }
   }
   for (const e of edges) {
     if (
