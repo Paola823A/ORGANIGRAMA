@@ -7,6 +7,7 @@ import GroupHeading from "./GroupHeading.vue";
 import CompactEdge from "./CompactEdge.vue";
 import { anchorOutgoingLines, slidePosition } from "../services/graphMovement.js";
 import { splitGraphEdge } from '../services/edgeRouting.js';
+import {modelEdgePath} from '../services/edgePath.js';
 import { isGroupingNode, subordinateCounts } from "../../../shared/graph.js";
 import "@vue-flow/core/dist/style.css";
 import "@vue-flow/core/dist/theme-default.css";
@@ -147,6 +148,7 @@ const nodes = computed(() =>
     },
   })),
 );
+const nodeLookup=computed(()=>new Map(renderedGraph.value.nodes.map(n=>[n.id,n])));
 const edges = computed(() =>
   renderedGraph.value.edges.map((e) => ({
     id: e.id,
@@ -154,8 +156,8 @@ const edges = computed(() =>
     target: e.target,
     sourceHandle: e.style?.sourceHandle || "source-bottom",
     targetHandle: (e.style?.targetHandle || "target-top").replace("target-", "source-"),
-    type: e.layoutPath && !isDragging.value && !preview.value ? "compact" : "smoothstep",
-    data: { layoutPath: e.layoutPath },
+    type: !isDragging.value ? "compact" : "smoothstep",
+    data: { layoutPath: modelEdgePath(renderedGraph.value,e,nodeLookup.value) },
     updatable: props.editable,
     style: {
       stroke: e.style?.color || "#94a3b8",
@@ -327,7 +329,7 @@ defineExpose({ fit, center, initialView });
       :zoom-on-double-click="!editable"
       :min-zoom="0.01"
       :max-zoom="2"
-      :only-render-visible-elements="true"
+      :only-render-visible-elements="false"
       @nodes-change="onChanges"
       @node-click="clickNode"
       @node-double-click="enableSlide"

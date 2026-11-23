@@ -62,6 +62,7 @@ export function chartService(db) {
     const getEmployee = db.prepare("SELECT 1 FROM employees WHERE id=?");
     const allNodes=[...graph.nodes];
     for(const node of graph.nodes) for(const sheet of Object.values(node.metadata?.sheetViews || {})) allNodes.push(...sheet.nodes);
+    for(const sheet of graph.workspaceState?.sheets || []) if(sheet.graph && !sheet.deleted) allNodes.push(...sheet.graph.nodes);
     for (const n of allNodes)
       if (n.employeeId)
         assert(
@@ -127,6 +128,7 @@ export function chartService(db) {
   }
   function saveDraft(id, body, actor='Modo local',action='Edición') {
     const current = getDraft(id);
+    assert(!current.workspaceState || body.workspaceState || action==='Restauración de historial','Este borrador usa hojas independientes. Actualiza la aplicación antes de guardar para no perderlas.',409);
     assert(
       Number.isInteger(body.content_revision),
       "Falta la revisión del borrador.",
@@ -166,7 +168,7 @@ export function chartService(db) {
         );
         checkGraph(draft);
         assert(
-          draft.nodes.length,
+          draft.nodes.length || draft.workspaceState?.sheets.some(s=>!s.deleted && s.graph?.nodes.length),
           "No se puede publicar un organigrama vacío.",
         );
         const number = db
@@ -180,6 +182,7 @@ export function chartService(db) {
           name: draft.name,
           nodes: draft.nodes,
           edges: draft.edges,
+          ...(draft.workspaceState ? {workspaceState:draft.workspaceState}:{}),
         };
         db.prepare(
           "INSERT INTO chart_versions(id,chart_id,version_number,source_draft_id,snapshot_json) VALUES (?,?,?,?,?)",
@@ -199,9 +202,10 @@ export function chartService(db) {
       snapshot: JSON.parse(version.snapshot_json),
     };
   }
-  function syncPreview(id) {
-    return getDraft(id)
-      .nodes.filter((n) => n.employeeId)
+  function syncPreview(id, nodes) {
+    const draft=getDraft(id);
+    if(nodes) checkGraph({nodes,edges:[]});
+    return (nodes || draft.nodes).filter((n) => n.employeeId)
       .map((n) => {
         const e = employees.get(n.employeeId);
         return {

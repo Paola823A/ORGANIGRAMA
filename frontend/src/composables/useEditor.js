@@ -2,6 +2,7 @@ import { computed, ref, shallowRef } from "vue";
 import { compactJunctions, validateGraph } from "../../../shared/graph.js";
 import { moveGraphNode } from "../services/graphMovement.js";
 import { splitGraphEdge } from '../services/edgeRouting.js';
+import {cardKey} from '../../../shared/sheetState.js';
 const copy = (value) => JSON.parse(JSON.stringify(value));
 export function useEditor() {
   const graph = shallowRef({ nodes: [], edges: [] }),
@@ -18,7 +19,7 @@ export function useEditor() {
     graph.value.nodes.find((n) => n.id === selectedId.value),
   );
   function load(value) {
-    graph.value = copy(compactJunctions({ nodes: value.nodes, edges: value.edges }));
+    graph.value = copy(compactJunctions({ nodes: value.nodes, edges: value.edges,...(value.deletedCards ? {deletedCards:value.deletedCards}:{}) }));
     saved.value = JSON.stringify(graph.value);
     past.value = [];
     future.value = [];
@@ -52,7 +53,7 @@ export function useEditor() {
     commit(next);
   }
   function addNode(node) {
-    commit({ ...graph.value, nodes: [...graph.value.nodes, node] });
+    commit({ ...graph.value, nodes: [...graph.value.nodes, node],...(graph.value.deletedCards ? {deletedCards:graph.value.deletedCards.filter(id=>id!==cardKey(node))}:{}) });
     selectNode(node.id);
   }
   function selectNode(id, additive = false) {
@@ -117,6 +118,7 @@ export function useEditor() {
     if (ids.size)
       commit({
         ...graph.value,
+        deletedCards:[...new Set([...(graph.value.deletedCards || []),...graph.value.nodes.filter(n=>ids.has(n.id)).map(cardKey)])],
         nodes: graph.value.nodes.filter((n) => !ids.has(n.id)),
         edges: graph.value.edges.filter(
           (e) => !ids.has(e.source) && !ids.has(e.target),

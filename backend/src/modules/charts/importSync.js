@@ -29,7 +29,8 @@ export function syncImportedDrafts(db,records,actor) {
       for(const [field,column] of [['company','company'],['businessLine','business_line'],['branch','branch'],['area','area'],['dni','dni']]) if(fields.includes(field)) metadata[field]=e[column];
       return {...n,employeeId:e.id,...(fields.includes('fullName') ? {title:e.full_name}:{}),...(fields.includes('positionName') ? {subtitle:e.position_name}:{}),metadata};
     });
-    const newPeople=employees.active(row.company_id).filter(e=>ids.has(e.id) && !present.has(e.id));
+    const removed=new Set(draft.workspaceState?.deletedCards || []);
+    const newPeople=employees.active(row.company_id).filter(e=>ids.has(e.id) && !present.has(e.id) && !removed.has(`employee:${e.id}`));
     const bottom=Math.max(0,...nodes.map(n=>n.position.y+n.height))+100;
     newPeople.forEach((e,i)=>{const n=employeeNode(e,nodes.length);n.position={x:(i%5)*300,y:bottom+Math.floor(i/5)*160};nodes.push(n);});
     if(!changed && !newPeople.length) continue;

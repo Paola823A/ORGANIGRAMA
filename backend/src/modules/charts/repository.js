@@ -30,9 +30,11 @@ export function chartRepository(db) {
         target: e.target_node_id,
         style: JSON.parse(e.style_json),
       }));
-    return { ...d, nodes, edges };
+    const {workspace_state_json,...details}=d;
+    return { ...details, nodes, edges,...(workspace_state_json ? {workspaceState:JSON.parse(workspace_state_json)}:{}) };
   }
   function writeGraph(id, graph) {
+    db.prepare('UPDATE chart_drafts SET workspace_state_json=? WHERE id=?').run(graph.workspaceState ? JSON.stringify(graph.workspaceState):null,id);
     db.prepare("DELETE FROM chart_edges WHERE draft_id=?").run(id);
     db.prepare("DELETE FROM chart_nodes WHERE draft_id=?").run(id);
     const nodeStmt = db.prepare(

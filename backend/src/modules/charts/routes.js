@@ -24,6 +24,7 @@ export function chartRoutes(service) {
   router.get("/drafts/:id/sync-preview", (req, res) =>
     res.json(service.syncPreview(req.params.id)),
   );
+  router.post('/drafts/:id/sync-preview',(req,res)=>res.json(service.syncPreview(req.params.id,req.body.nodes)));
   router.post("/drafts/:id/publish", (req, res) =>
     res.status(201).json(service.publish(req.params.id, req.body)),
   );

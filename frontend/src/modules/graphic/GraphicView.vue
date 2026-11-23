@@ -10,8 +10,7 @@ import { applyBrandTheme } from "../../../../shared/theme.js";
 import GraphCanvas from "../../components/GraphCanvas.vue";
 import {boardOptions,positionGroup,positionCounts} from '../../services/boardFilters.js';
 import { useAuth } from "../../composables/useAuth.js";
-import {businessLines,businessSheet} from '../../services/businessSheets.js';
-import {openWorkspace,workspaceView} from '../../services/sheetWorkspace.js';
+import {openWorkspace,workspaceView,workspaceTabs} from '../../services/sheetWorkspace.js';
 const activeSheet=ref('');
 const { can } = useAuth();
 const positionFilter=ref('');
@@ -38,8 +37,9 @@ const company = computed(() =>
     companies.value.find((c) => c.id === companyId.value),
   ),
   chartId = computed(() => company.value?.chart_id);
-const sheets=computed(()=>businessLines(graph.value));
-const sheetGraph=computed(()=>activeSheet.value ? workspaceView(openWorkspace(graph.value),activeSheet.value,company.value?.name):graph.value);
+const publishedWorkspace=computed(()=>openWorkspace(graph.value));
+const sheets=computed(()=>workspaceTabs(publishedWorkspace.value));
+const sheetGraph=computed(()=>workspaceView(publishedWorkspace.value,activeSheet.value,company.value?.name));
 async function chooseSheet(line) {
  activeSheet.value=line;filters.value={businessLine:'',branch:'',area:''};positionFilter.value='';collapsed.value=new Set();
  await nextTick();canvas.value?.initialView();
@@ -135,7 +135,7 @@ function toggle(id) {
   autoReflow.value = true;
 }
 function locate(node) {
-  if(activeSheet.value && normalize(node.metadata?.businessLine)!==normalize(activeSheet.value)) activeSheet.value='';
+  if(activeSheet.value && !sheetGraph.value.nodes.some(n=>n.id===node.id)) activeSheet.value='';
   filters.value = { businessLine: "", branch: "", area: "" };
   const copy = new Set(collapsed.value);
   for (const id of graphAncestors(sheetGraph.value, node.id)) copy.delete(id);
@@ -330,7 +330,7 @@ function date(value) {
       </div>
       <nav class="business-sheet-tabs" aria-label="Hojas del organigrama" role="tablist">
         <button role="tab" :aria-selected="!activeSheet" :class="{active:!activeSheet}" @click="chooseSheet('')">GENERAL</button>
-        <button v-for="line in sheets" :key="line" role="tab" :aria-selected="activeSheet===line" :class="{active:activeSheet===line}" @click="chooseSheet(line)">{{ line }}</button>
+        <button v-for="sheet in sheets" :key="sheet.id" role="tab" :aria-selected="activeSheet===sheet.id" :class="{active:activeSheet===sheet.id}" @click="chooseSheet(sheet.id)">{{ sheet.name }}</button>
       </nav>
       <footer class="graphic-footer">
         <span

@@ -58,7 +58,14 @@ export function accessControl(db,auth) {
       if (write && Array.isArray(req.body?.nodes)) {
         const existing = parts[1] === 'drafts' ? db.prepare('SELECT employee_id FROM chart_nodes WHERE draft_id=?').all(parts[2]) : [];
         const ids = new Set(existing.map((row) => row.employee_id));
-        for (const node of req.body.nodes) if (node.employeeId && !ids.has(node.employeeId)) {
+        if(parts[1]==='drafts') {
+          const stored=db.prepare('SELECT workspace_state_json FROM chart_drafts WHERE id=?').get(parts[2]);
+          if(stored?.workspace_state_json) for(const sheet of JSON.parse(stored.workspace_state_json).sheets || []) if(!sheet.deleted && sheet.graph) for(const node of sheet.graph.nodes) if(node.employeeId) ids.add(node.employeeId);
+          for(const row of db.prepare('SELECT metadata_json FROM chart_nodes WHERE draft_id=?').all(parts[2])) for(const sheet of Object.values(JSON.parse(row.metadata_json).sheetViews || {})) for(const node of sheet.nodes || []) if(node.employeeId) ids.add(node.employeeId);
+        }
+        const requested=[...req.body.nodes];
+        if(Array.isArray(req.body.workspaceState?.sheets)) for(const sheet of req.body.workspaceState.sheets) if(Array.isArray(sheet?.graph?.nodes)) requested.push(...sheet.graph.nodes);
+        for (const node of requested) if (node?.employeeId && !ids.has(node.employeeId)) {
           const e = db.prepare('SELECT company_id FROM employees WHERE id=?').get(node.employeeId);
           assert(e && can(e.company_id,'board'),'No tienes permiso para incorporar personal de esta empresa.',403);
         }

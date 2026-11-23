@@ -57,6 +57,19 @@ export function validateGraph(graph, nestedSheet = false) {
   if (!graph || !Array.isArray(graph.nodes) || !Array.isArray(graph.edges))
     throw new Error("El grafo requiere nodos y conexiones.");
   const { nodes, edges } = graph;
+  if(graph.deletedCards!==undefined && (!Array.isArray(graph.deletedCards) || graph.deletedCards.length>20000 || graph.deletedCards.some(id=>typeof id!=='string' || id.length>250))) throw new Error('Registro de tarjetas eliminadas inválido.');
+  if(graph.workspaceState!==undefined) {
+    if(nestedSheet) throw new Error('Una hoja no puede contener un libro completo.');
+    const state=graph.workspaceState;
+    if(!state || state.version!==2 || !Array.isArray(state.sheets) || state.sheets.length>100 || JSON.stringify(state).length>12*1024*1024) throw new Error('Estado del libro inválido o demasiado grande.');
+    const sheetIds=new Set();
+    if(!Array.isArray(state.deletedCards) || state.deletedCards.length>20000 || state.deletedCards.some(id=>typeof id!=='string' || id.length>250)) throw new Error('Registro de eliminaciones de General inválido.');
+    for(const sheet of state.sheets) {
+      if(!sheet || typeof sheet.id!=='string' || !sheet.id || sheet.id.length>100 || sheetIds.has(sheet.id) || typeof sheet.name!=='string' || !sheet.name.trim() || sheet.name.length>500 || !['BUSINESS','CUSTOM','ARCHIVED'].includes(sheet.kind) || typeof sheet.deleted!=='boolean' || !(sheet.businessLine===null || typeof sheet.businessLine==='string')) throw new Error('Identidad o clasificación de hoja inválida.');
+      sheetIds.add(sheet.id);
+      if(sheet.graph!==null) try{validateGraph(sheet.graph,true);}catch(error){throw new Error(`Hoja «${sheet.name}»: ${error.message}`);}
+    }
+  }
   if (nodes.length > 3000 || edges.length > 3000)
     throw new Error("El límite es 3000 tarjetas y 3000 conexiones.");
   const ids = new Set(),

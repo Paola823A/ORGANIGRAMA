@@ -22,13 +22,47 @@ import { restoreCompactedPoint } from "../../services/compactLayout.js";
 import { exportGraph } from "../../services/export.js";
 import { selectedGraph } from "../../services/exportSelection.js";
 import {boardFilterLabels,boardOptions,matchesBoard,positionCounts} from '../../services/boardFilters.js';
-import {businessLines} from '../../services/businessSheets.js';
-import {openWorkspace,updateWorkspace,workspaceView,serializeWorkspace} from '../../services/sheetWorkspace.js';
+import {openWorkspace,updateWorkspace,workspaceView,serializeWorkspace,workspaceTabs,createSheet,renameSheet,duplicateSheet,deleteSheet,reorderSheet} from '../../services/sheetWorkspace.js';
 let workspace=null;
-const workspaceDirty=ref(false),allSheets=ref([]);
+const workspaceDirty=ref(false),allSheets=ref([]),archivedSheets=ref([]),sheetMenu=ref(null);
+const sheetMenuPosition=ref({}),draggedSheet=ref(null),dropSheet=ref(null);
+let suppressSheetClickUntil=0;
+function dismissSheetMenu(event) {
+ if(event.type==='keydown') {if(event.key==='Escape') sheetMenu.value=null;return;}
+ if(!event.target.closest?.('.sheet-tab, .sheet-context-menu')) sheetMenu.value=null;
+}
+function clickSheet(sheet) {
+ if(busy.value || Date.now()<suppressSheetClickUntil) return;
+ sheetMenu.value=null;
+ return chooseSheet(sheet.id);
+}
+function openSheetMenu(sheet,event) {
+ if(busy.value || Date.now()<suppressSheetClickUntil) return;
+ const wasOpen=sheetMenu.value===sheet.id;
+ const rect=event.currentTarget.getBoundingClientRect();
+ sheetMenuPosition.value={left:`${Math.max(8,Math.min(rect.left,window.innerWidth-200))}px`,bottom:`${window.innerHeight-rect.top+6}px`};
+ sheetMenu.value=wasOpen ? null:sheet.id;
+}
+function startSheetDrag(sheet,event) {
+ if(busy.value){event.preventDefault();return;}
+ draggedSheet.value=sheet.id;sheetMenu.value=null;
+ event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',sheet.id);
+}
+function endSheetDrag() {draggedSheet.value=null;dropSheet.value=null;suppressSheetClickUntil=Date.now()+250;}
+async function dropOnSheet(sheet,event) {
+ const id=draggedSheet.value;
+ const rect=event.currentTarget.getBoundingClientRect();
+ endSheetDrag();
+ if(!workspace || busy.value || !id) return;
+ if(reorderSheet(workspace,id,sheet.id,event.clientX>rect.left+rect.width/2)) {
+  workspaceRevision++;workspaceDirty.value=true;refreshSheetTabs();await save();
+ }
+}
+let workspaceRevision=0;
+function refreshSheetTabs(){allSheets.value=workspaceTabs(workspace);archivedSheets.value=workspaceTabs(workspace,true);}
 function loadWorkspace(value) {
  workspace=openWorkspace(applyBrandTheme(value,company.value?.name));activeSheet.value='';workspaceDirty.value=false;
- allSheets.value=businessLines(workspace.general);editor.load(workspaceView(workspace,''));
+ workspaceRevision++;refreshSheetTabs();editor.load(workspaceView(workspace,''));
 }
 const activeSheet=ref('');
 const boardFilters=ref({businessLine:'',area:'',branch:'',position:''});
@@ -117,13 +151,35 @@ const displayed = computed(() =>
 const filterOptions=computed(()=>boardOptions(graph.value.nodes,boardFilters.value));
 const sheets=computed(()=>allSheets.value);
 async function chooseSheet(line) {
- if(!workspace || line===activeSheet.value) return;
+ if(!workspace || line===activeSheet.value || busy.value) return;
  workspaceDirty.value=workspaceDirty.value || editor.dirty.value;
  updateWorkspace(workspace,activeSheet.value,graph.value);
- allSheets.value=businessLines(workspace.general);
+ refreshSheetTabs();
  activeSheet.value=line;boardFilters.value={businessLine:'',area:'',branch:'',position:''};editor.selectNode(null);chosenEdge.value=null;
  editor.load(workspaceView(workspace,line,company.value?.name));
  await nextTick();canvas.value?.initialView();
+}
+async function sheetAction(action,id=activeSheet.value) {
+ if(!workspace || busy.value) return;
+ error.value='';
+ try {
+  updateWorkspace(workspace,activeSheet.value,graph.value);
+  const sheet=workspace.sheets.find(s=>s.id===id);
+  let target=activeSheet.value;
+  if(action==='create' || action==='duplicate' || action==='rename') {
+   const name=window.prompt(action==='rename' ? 'Nombre de la hoja':'Nombre de la nueva hoja',action==='duplicate' ? `${sheet.name} (copia)`:action==='rename' ? sheet.name:'');
+   if(name===null) return;
+   if(action==='create') target=createSheet(workspace,name).id;
+   else if(action==='duplicate') target=duplicateSheet(workspace,id,name,company.value?.name).id;
+   else renameSheet(workspace,id,name);
+  }else if(action==='delete') {
+   if(!window.confirm(`¿Eliminar la hoja «${sheet.name}»? No se eliminarán empleados ni otras hojas. El historial permite restaurar el estado anterior.`)) return;
+   deleteSheet(workspace,id);if(target===id) target='';
+  }else if(action==='archiveRestore') {sheet.kind='CUSTOM';target=id;}
+  workspaceRevision++;workspaceDirty.value=true;refreshSheetTabs();sheetMenu.value=null;activeSheet.value=target;
+  editor.load(workspaceView(workspace,target,company.value?.name));
+  await save();await nextTick();canvas.value?.initialView();
+ }catch(e){error.value=e.message;}
 }
 const matchingPositions=computed(()=>boardFilters.value.position ? displayed.value.nodes.filter(n=>n.type==='EMPLOYEE' && matchesBoard(n,{position:boardFilters.value.position})).map(n=>n.id):[]);
 const positionTotals=computed(()=>positionCounts(displayed.value.nodes,boardFilters.value));
@@ -175,9 +231,14 @@ function pasteSelection() {
     nextTick(() => canvas.value?.center(displayed.value.nodes.find((node) => node.id === nodes[0].id) || nodes[0]));
   });
 }
-function removeSelection() {
+async function removeSelection() {
+  if(busy.value) return;
+  const ids=selectedIds.value.size ? selectedIds.value : new Set(selectedId.value ? [selectedId.value]:[]);
+  const children=new Set(graph.value.edges.filter(e=>ids.has(e.source)&&!ids.has(e.target)).map(e=>e.target));
+  if(ids.size && !window.confirm(`¿Eliminar ${ids.size} tarjeta(s) de esta hoja? ${children.size ? `Sus ${children.size} subordinados directos se conservarán sin estas conexiones.`:'Se eliminarán sus conexiones.'} El personal de la base y las otras hojas se conservan.`)) return;
   attempt(() => editor.remove());
   chosenEdge.value = null;
+  if(editor.dirty.value && draft.value) await save();
 }
 function onEditorKey(event) {
   if (!draft.value || busy.value || dialog.value) return;
@@ -197,10 +258,14 @@ function onEditorKey(event) {
   }
 }
 onMounted(() => {
+  document.addEventListener('click',dismissSheetMenu);
+  document.addEventListener('keydown',dismissSheetMenu);
   window.addEventListener("beforeunload", beforeUnload);
   window.addEventListener("keydown", onEditorKey);
 });
 onBeforeUnmount(() => {
+  document.removeEventListener('click',dismissSheetMenu);
+  document.removeEventListener('keydown',dismissSheetMenu);
   window.removeEventListener("beforeunload", beforeUnload);
   window.removeEventListener("keydown", onEditorKey);
   clearTimeout(searchTimer);
@@ -324,6 +389,7 @@ async function save() {
   error.value = "";
   const savingId = draft.value.id;
   const savingSheet=activeSheet.value;
+  const savingWorkspaceRevision=workspaceRevision;
   const submittedGraph = JSON.stringify(graph.value);
   try {
     updateWorkspace(workspace,activeSheet.value,graph.value);
@@ -340,7 +406,8 @@ async function save() {
     draft.value = { ...value, name: draft.value.name };
     savedName.value = value.name;
     if(activeSheet.value===savingSheet) editor.saved.value = submittedGraph;
-    workspaceDirty.value=activeSheet.value!==savingSheet;
+    workspaceDirty.value=activeSheet.value!==savingSheet || workspaceRevision!==savingWorkspaceRevision;
+    autosaveBlocked=false;
     notice.value = "Borrador guardado.";
     await refreshLists();
   } catch (e) {
@@ -556,7 +623,7 @@ async function openSync() {
   busy.value = true;
   error.value = "";
   try {
-    sync.value = await api(`/drafts/${draft.value.id}/sync-preview`);
+    sync.value = await api(`/drafts/${draft.value.id}/sync-preview`,{method:'POST',body:{nodes:graph.value.nodes}});
     syncIds.value = [];
     syncTitles.value = false;
     dialog.value = "sync";
@@ -637,7 +704,7 @@ function applySync() {
         ><button
           class="primary"
           @click="publish"
-          :disabled="!draft || dirty || busy || !graph.nodes.length"
+          :disabled="!draft || dirty || busy"
         >
           Publicar versión
         </button>
@@ -737,7 +804,7 @@ function applySync() {
           :node="selected"
           @save="(n) => attempt(() => editor.updateNode(n))"
           @duplicate="attempt(editor.duplicate)"
-          @remove="attempt(editor.remove)"
+          @remove="removeSelection"
           @layout="layout(selectedId)"
         />
         <aside v-if="chosenEdge && !selected" class="properties-panel">
@@ -792,8 +859,17 @@ function applySync() {
       </div>
       <nav class="business-sheet-tabs" aria-label="Hojas de Board" role="tablist">
         <button role="tab" :aria-selected="!activeSheet" :class="{active:!activeSheet}" @click="chooseSheet('')">GENERAL</button>
-        <button v-for="line in sheets" :key="line" role="tab" :aria-selected="activeSheet===line" :class="{active:activeSheet===line}" @click="chooseSheet(line)">{{ line }}</button>
+        <div v-for="sheet in sheets" :key="sheet.id" class="sheet-tab" :class="{'sheet-drop-target':dropSheet===sheet.id}" @dragover.prevent="dropSheet=sheet.id" @dragleave="dropSheet=null" @drop.prevent="dropOnSheet(sheet,$event)">
+          <button role="tab" :disabled="busy" :draggable="!busy" :aria-selected="activeSheet===sheet.id" aria-haspopup="menu" :aria-expanded="sheetMenu===sheet.id" :class="{active:activeSheet===sheet.id}" @click="clickSheet(sheet)" @contextmenu.prevent="openSheetMenu(sheet,$event)" @dragstart="startSheetDrag(sheet,$event)" @dragend="endSheetDrag">{{ sheet.name }}</button>
+        </div>
+        <button :disabled="busy" aria-label="Crear nueva hoja" @click="sheetAction('create')">+</button>
       </nav>
+      <Teleport to="body"><div v-if="sheetMenu" class="sheet-context-menu" :style="sheetMenuPosition" role="menu" aria-label="Opciones de hoja">
+        <button role="menuitem" @click="sheetAction('rename',sheetMenu)">Renombrar hoja</button>
+        <button role="menuitem" @click="sheetAction('duplicate',sheetMenu)">Duplicar hoja</button>
+        <button role="menuitem" @click="sheetAction('delete',sheetMenu)">Eliminar hoja</button>
+      </div></Teleport>
+      <details v-if="archivedSheets.length"><summary>Estructuras archivadas</summary><button v-for="sheet in archivedSheets" :key="sheet.id" :disabled="busy" @click="sheetAction('archiveRestore',sheet.id)">Recuperar {{ sheet.name }} como hoja personalizada</button></details>
     </template>
     <div v-else class="empty-state">
       <div class="empty-symbol">◇</div>
