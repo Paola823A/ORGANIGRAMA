@@ -38,9 +38,10 @@ const company = computed(() =>
   ),
   chartId = computed(() => company.value?.chart_id);
 const publishedWorkspace=computed(()=>openWorkspace(graph.value));
-const sheets=computed(()=>workspaceTabs(publishedWorkspace.value));
+const sheets=computed(()=>workspaceTabs(publishedWorkspace.value,false,'ORGANIGRAMA'));
 const sheetGraph=computed(()=>workspaceView(publishedWorkspace.value,activeSheet.value,company.value?.name));
 async function chooseSheet(line) {
+ if(line && !sheets.value.some(s=>s.id===line)) return;
  activeSheet.value=line;filters.value={businessLine:'',branch:'',area:''};positionFilter.value='';collapsed.value=new Set();
  await nextTick();canvas.value?.initialView();
 }

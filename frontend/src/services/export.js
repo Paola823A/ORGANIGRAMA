@@ -3,6 +3,7 @@ import { getSmoothStepPath } from "@vue-flow/core";
 import { cardTextColor, cardTextStyle, connectionAnchor, groupBaseStyle } from "./cardStyle.js";
 import { cardContent } from "./cardContent.js";
 import { drawVectorGraph } from "./vectorPdf.js";
+import {presentationEdgePath} from './edgePath.js';
 import { companyTheme } from "../../../shared/theme.js";
 import { isGroupingNode, subordinateCounts } from "../../../shared/graph.js";
 import {
@@ -62,8 +63,14 @@ function exportTile(graph, bounds, showNames, left, top, width, height, teams) {
       sourcePosition: source.side,
       targetPosition: target.side,
     });
-    path.setAttribute("d", e.layoutPath || d);
-    if (e.layoutPath) path.setAttribute("transform", `translate(${-bounds.x - left} ${-bounds.y - top})`);
+    if(e.layoutPath) {
+      const a=connectionAnchor(s,e.style?.sourceHandle,'bottom'),b=connectionAnchor(t,e.style?.targetHandle,'top');
+      path.setAttribute('d',presentationEdgePath(e.layoutPath,s,t,a,b));
+      path.setAttribute('transform',`translate(${-bounds.x-left} ${-bounds.y-top})`);
+    } else {
+      const offsetNode=n=>({...n,position:{x:n.position.x-bounds.x-left,y:n.position.y-bounds.y-top}});
+      path.setAttribute('d',presentationEdgePath(d,offsetNode(s),offsetNode(t),source,target));
+    }
     path.setAttribute("fill", "none");
     path.setAttribute("stroke", e.style?.color || "#94a3b8");
     path.setAttribute("stroke-width", e.style?.width || 1.5);
@@ -73,6 +80,7 @@ function exportTile(graph, bounds, showNames, left, top, width, height, teams) {
   }
   frame.append(svg);
   for (const n of graph.nodes) {
+    if(n.type==='JUNCTION') continue;
     const x = n.position.x - bounds.x - left,
       y = n.position.y - bounds.y - top;
     // The overlapping tiles guarantee a complete copy on at least one page.
@@ -94,10 +102,6 @@ function exportTile(graph, bounds, showNames, left, top, width, height, teams) {
     for (const [key, value] of Object.entries(cardTextStyle(n.style))) {
       if (key.startsWith("--")) card.style.setProperty(key, value);
       else card.style[key] = value;
-    }
-    if (n.type === "JUNCTION") {
-      frame.append(card);
-      continue;
     }
     if (isGroupingNode(n)) {
       card.className = "group-heading";

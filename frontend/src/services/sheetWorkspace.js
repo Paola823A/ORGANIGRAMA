@@ -1,11 +1,12 @@
 import {businessSheet} from './businessSheets.js';
 import {businessLineNames,cardKey} from '../../../shared/sheetState.js';
 import {normalize} from '../../../shared/graph.js';
+import {repairEdgeIds} from '../../../shared/edgeIdentity.js';
 const clone=value=>JSON.parse(JSON.stringify(value));
 function clean(graph) {
  const result=clone({nodes:graph.nodes,edges:graph.edges,deletedCards:graph.deletedCards || []});
  for(const n of result.nodes) delete n.metadata.sheetViews;
- return result;
+ return repairEdgeIds(result).graph;
 }
 function share(target,source) {
  const byId=new Map(source.nodes.filter(n=>n.type==='EMPLOYEE').map(n=>[n.employeeId,n]));
@@ -17,13 +18,13 @@ function share(target,source) {
 export function openWorkspace(graph) {
  const state=graph.workspaceState;
  const general=clean({...graph,deletedCards:state?.deletedCards || graph.deletedCards || []});
- if(state?.version===2) return {general,sheets:clone(state.sheets)};
+ if(state?.version===2) return {general,sheets:clone(state.sheets).map(s=>({...s,graph:s.graph ? clean(s.graph):null}))};
  const legacy=graph.nodes.reduce((all,n)=>Object.assign(all,n.metadata?.sheetViews || {}),{});
  const names=[...new Set([...businessLineNames(graph),...Object.keys(legacy)])];
  const sheets=names.map(name=>({id:crypto.randomUUID(),name,kind:normalize(name)==='SOPORTE' ? 'ARCHIVED':'BUSINESS',businessLine:name,deleted:false,graph:legacy[name] ? clean(legacy[name]):null}));
  return {general,sheets};
 }
-export function workspaceTabs(workspace,archived=false) {return workspace.sheets.filter(s=>!s.deleted && (archived ? s.kind==='ARCHIVED':s.kind!=='ARCHIVED'));}
+export function workspaceTabs(workspace,archived=false,module='BOARD') {return workspace.sheets.filter(s=>!s.deleted && (archived ? s.kind==='ARCHIVED':s.kind!=='ARCHIVED') && (module==='BOARD' || normalize(s.name)!=='BORRADOR FUSO'));}
 function findSheet(workspace,key) {return workspace.sheets.find(s=>s.id===key) || workspace.sheets.find(s=>s.businessLine===key || s.name===key);}
 export function updateWorkspace(workspace,key,graph) {
  const next=clean(graph);
@@ -46,7 +47,12 @@ export function workspaceView(workspace,key,company) {
   while(changed){changed=false;for(const e of fresh.edges) if(required.has(e.target)&&!ids.has(e.source)&&!required.has(e.source)&&fresh.nodes.find(n=>n.id===e.source)?.type!=='EMPLOYEE'&&!removed.has(`node:${e.source}`)){required.add(e.source);changed=true;}}
   const bottom=Math.max(0,...saved.nodes.map(n=>n.position.y+n.height))+100;
   fresh.nodes.filter(n=>required.has(n.id)&&!ids.has(n.id)).forEach((n,i)=>{saved.nodes.push({...n,position:{x:i%5*300,y:bottom+Math.floor(i/5)*180}});ids.add(n.id);});
-  for(const e of fresh.edges) if(required.has(e.target)&&ids.has(e.source)&&!saved.edges.some(old=>old.source===e.source&&old.target===e.target)) saved.edges.push(e);
+  const edgeIds=new Set(saved.edges.map(e=>e.id));
+  for(const e of fresh.edges) if(required.has(e.target)&&ids.has(e.source)&&!saved.edges.some(old=>old.source===e.source&&old.target===e.target)) {
+   let id=e.id;
+   while(edgeIds.has(id)) id=crypto.randomUUID();
+   saved.edges.push({...e,id});edgeIds.add(id);
+  }
  }
  sheet.graph=share(sheet.graph,workspace.general);
  return clone(sheet.graph);

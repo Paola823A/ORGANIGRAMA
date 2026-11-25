@@ -157,7 +157,7 @@ const edges = computed(() =>
     sourceHandle: e.style?.sourceHandle || "source-bottom",
     targetHandle: (e.style?.targetHandle || "target-top").replace("target-", "source-"),
     type: !isDragging.value ? "compact" : "smoothstep",
-    data: { layoutPath: modelEdgePath(renderedGraph.value,e,nodeLookup.value) },
+    data: { layoutPath: modelEdgePath(renderedGraph.value,e,nodeLookup.value,!props.editable) },
     updatable: props.editable,
     style: {
       stroke: e.style?.color || "#94a3b8",
@@ -309,7 +309,7 @@ watch(
 defineExpose({ fit, center, initialView });
 </script>
 <template>
-  <div class="graph-canvas" :class="{ 'has-pan-sliders': showSliders, 'rectangle-selection-mode': rectangleMode, 'editable-lines': editable }"
+  <div class="graph-canvas" :class="{ 'has-pan-sliders': showSliders, 'rectangle-selection-mode': rectangleMode, 'editable-lines': editable, 'presentation-lines': !editable }"
     tabindex="0" @dblclick="toggleRectangle" @keydown.esc="rectangleMode = false" @pointerdown.capture="beginPointer">
     <VueFlow
       :id="id"

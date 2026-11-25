@@ -2,6 +2,7 @@ import { getSmoothStepPath } from '@vue-flow/core';
 import { isGroupingNode } from '../../../shared/graph.js';
 import { cardContent } from './cardContent.js';
 import { cardTextColor,connectionAnchor } from './cardStyle.js';
+import {presentationEdgePath} from './edgePath.js';
 
 // Native PDF text and drawing commands remain sharp at any zoom level.
 export function drawVectorGraph(pdf,graph,bounds,{teams,showNames=true}) {
@@ -15,7 +16,7 @@ export function drawVectorGraph(pdf,graph,bounds,{teams,showNames=true}) {
     const source=nodes.get(edge.source),target=nodes.get(edge.target);
     if(!source || !target) continue;
     const a=connectionAnchor(source,edge.style?.sourceHandle,'bottom'),b=connectionAnchor(target,edge.style?.targetHandle,'top');
-    const path=edge.layoutPath || getSmoothStepPath({sourceX:a.x,sourceY:a.y,sourcePosition:a.side,targetX:b.x,targetY:b.y,targetPosition:b.side,borderRadius:0})[0];
+    const path=presentationEdgePath(edge.layoutPath || getSmoothStepPath({sourceX:a.x,sourceY:a.y,sourcePosition:a.side,targetX:b.x,targetY:b.y,targetPosition:b.side,borderRadius:0})[0],source,target,a,b);
     const tokens=path.match(/[MLQ]|-?\d+(?:\.\d+)?(?:e[-+]?\d+)?/gi) || [];
     let previous=null;
     pdf.setDrawColor(color(edge.style?.color));pdf.setLineWidth((edge.style?.width || 1.5)*scale);
@@ -29,11 +30,11 @@ export function drawVectorGraph(pdf,graph,bounds,{teams,showNames=true}) {
   }
   pdf.setLineDashPattern([],0);
   for(const node of graph.nodes) {
+    if(node.type==='JUNCTION') continue;
     const left=x(node.position.x),top=y(node.position.y),width=node.width*scale,height=node.height*scale;
     const style=node.style || {},group=isGroupingNode(node),parent=teams.parents.has(node.id);
     pdf.setDrawColor(color(style.borderColor));pdf.setFillColor(color(style.backgroundColor || '#ffffff'));pdf.setLineWidth(scale);
     pdf.setLineDashPattern(style.borderStyle==='dashed' ? [5*scale,3*scale]:[],0);
-    if(node.type==='JUNCTION') {pdf.circle(left+width/2,top+height/2,Math.min(width,height)/2,'F');continue;}
     if(group) {
       pdf.line(left,top+height,left+width,top+height);
       if(['BUSINESS_LINE','AREA'].includes(node.type)) pdf.line(left,top+height-3*scale,left+width,top+height-3*scale);
