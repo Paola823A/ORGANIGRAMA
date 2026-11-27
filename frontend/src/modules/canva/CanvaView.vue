@@ -23,6 +23,7 @@ import { exportGraph } from "../../services/export.js";
 import { selectedGraph } from "../../services/exportSelection.js";
 import {boardFilterLabels,boardOptions,matchesBoard,positionCounts} from '../../services/boardFilters.js';
 import {openWorkspace,updateWorkspace,workspaceView,serializeWorkspace,workspaceTabs,createSheet,renameSheet,duplicateSheet,deleteSheet,reorderSheet} from '../../services/sheetWorkspace.js';
+import {copyGeneralBusinessStructures} from '../../services/generalBusinessSheet.js';
 let workspace=null;
 const workspaceDirty=ref(false),allSheets=ref([]),archivedSheets=ref([]),sheetMenu=ref(null);
 const sheetMenuPosition=ref({}),draggedSheet=ref(null),dropSheet=ref(null);
@@ -176,6 +177,11 @@ async function sheetAction(action,id=activeSheet.value) {
    if(!window.confirm(`¿Eliminar la hoja «${sheet.name}»? No se eliminarán empleados ni otras hojas. El historial permite restaurar el estado anterior.`)) return;
    deleteSheet(workspace,id);if(target===id) target='';
   }else if(action==='archiveRestore') {sheet.kind='CUSTOM';target=id;}
+  else if(action==='copyGeneral') {
+   if(!window.confirm(`¿Copiar la estructura del General a «${sheet.name}»? Se reemplazará la distribución de esta hoja. El General y POST VENTA se conservan; puedes recuperar la distribución anterior desde Historial.`)) return;
+   if(!copyGeneralBusinessStructures(workspace,company.value?.name,[id]).length) return;
+   target=id;
+  }
   workspaceRevision++;workspaceDirty.value=true;refreshSheetTabs();sheetMenu.value=null;activeSheet.value=target;
   editor.load(workspaceView(workspace,target,company.value?.name));
   await save();await nextTick();canvas.value?.initialView();
@@ -867,6 +873,7 @@ function applySync() {
       <Teleport to="body"><div v-if="sheetMenu" class="sheet-context-menu" :style="sheetMenuPosition" role="menu" aria-label="Opciones de hoja">
         <button role="menuitem" @click="sheetAction('rename',sheetMenu)">Renombrar hoja</button>
         <button role="menuitem" @click="sheetAction('duplicate',sheetMenu)">Duplicar hoja</button>
+        <button v-if="sheets.some(s=>s.id===sheetMenu && s.kind==='BUSINESS' && normalize(s.businessLine || s.name)!=='POST VENTA' && normalize(s.name)!=='POST VENTA')" role="menuitem" @click="sheetAction('copyGeneral',sheetMenu)">Copiar estructura del General</button>
         <button role="menuitem" @click="sheetAction('delete',sheetMenu)">Eliminar hoja</button>
       </div></Teleport>
       <details v-if="archivedSheets.length"><summary>Estructuras archivadas</summary><button v-for="sheet in archivedSheets" :key="sheet.id" :disabled="busy" @click="sheetAction('archiveRestore',sheet.id)">Recuperar {{ sheet.name }} como hoja personalizada</button></details>

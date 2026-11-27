@@ -87,7 +87,6 @@ function exportTile(graph, bounds, showNames, left, top, width, height, teams) {
     if (!isCompleteInTile(n, bounds, left, top, width, height)) continue;
     const card = document.createElement("article");
     card.className = n.type === "JUNCTION" ? "junction-node" : `chart-card${n.type !== "EMPLOYEE" ? " is-manual" : ""}${n.metadata.employmentStatus === "CEASED" ? " is-ceased" : ""}`;
-    if (n.metadata.visualOnly) card.classList.add("is-visual-copy");
     Object.assign(card.style, {
       position: "absolute",
       left: `${x}px`,
@@ -128,7 +127,6 @@ function exportTile(graph, bounds, showNames, left, top, width, height, teams) {
       card.append(status);
     }
     const content = cardContent(n, showNames);
-    if (n.metadata.visualOnly) card.append(textElement("span", "visual-copy-label", "Solo visual"));
     const body = textElement("div", "card-content", "");
     body.append(textElement("strong", "card-title", content.heading));
     if (content.name) body.append(textElement("span", "card-subtitle", content.name));

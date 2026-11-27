@@ -51,10 +51,10 @@ export function drawVectorGraph(pdf,graph,bounds,{teams,showNames=true}) {
         return {...f,lines:pdf.splitTextToSize(f.text,innerWidth),lineHeight:f.size*1.3*scale*factor,factor};
       });
     }
-    let rows=layout(1),available=Math.max(10,node.height-20-(parent ? 20:0)-(node.metadata?.visualOnly ? 8:0))*scale;
+    let rows=layout(1),available=Math.max(10,node.height-20-(parent ? 20:0))*scale;
     for(let attempt=0;attempt<10 && rows.reduce((sum,f)=>sum+f.lines.length*f.lineHeight,0)>available;attempt++) rows=layout(rows[0].factor*0.85);
     const total=rows.reduce((sum,f)=>sum+f.lines.length*f.lineHeight,0);
-    let cursor=top+10*scale+(node.metadata?.visualOnly ? 8*scale:0)+Math.max(0,(available-total)/2);
+    let cursor=top+10*scale+Math.max(0,(available-total)/2);
     pdf.setTextColor(color(cardTextColor(node)));
     for(const field of rows) {
       pdf.setFont('helvetica',fontStyle(field.bold));pdf.setFontSize(field.size*scale*72/25.4*field.factor);
@@ -67,9 +67,6 @@ export function drawVectorGraph(pdf,graph,bounds,{teams,showNames=true}) {
           pdf.setDrawColor(color(cardTextColor(node)));pdf.line(start,cursor-field.lineHeight*.3,start+textWidth,cursor-field.lineHeight*.3);
         }
       }
-    }
-    if(node.metadata?.visualOnly) {
-      pdf.setFont('helvetica','normal');pdf.setFontSize(6*scale*72/25.4);pdf.text('Solo visual',left+width-8*scale,top+8*scale,{align:'right'});
     }
     if(parent) {
       const count=teams.counts.get(node.id) || 0,label=group ? teams.collapsed.has(node.id) ? 'Mostrar':'Ocultar':`${count} ${count===1 ? 'persona':'personas'}`;

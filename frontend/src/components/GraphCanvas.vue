@@ -8,6 +8,7 @@ import CompactEdge from "./CompactEdge.vue";
 import { anchorOutgoingLines, slidePosition } from "../services/graphMovement.js";
 import { splitGraphEdge } from '../services/edgeRouting.js';
 import {modelEdgePath} from '../services/edgePath.js';
+import {rectangleBounds,nodesInRectangle} from '../services/rectangleSelection.js';
 import { isGroupingNode, subordinateCounts } from "../../../shared/graph.js";
 import "@vue-flow/core/dist/style.css";
 import "@vue-flow/core/dist/theme-default.css";
@@ -41,8 +42,9 @@ const renderedGraph = computed(() => preview.value || props.graph);
 const hierarchy = computed(() => props.hierarchyGraph || props.graph);
 const teamCounts = computed(() => subordinateCounts(hierarchy.value));
 const parentIds = computed(() => new Set(hierarchy.value.edges.map((edge) => edge.source)));
-let dragState = null, ignoreClickUntil = 0, rectangleSelection = null;
-const { fitView, setCenter, setViewport, viewport, dimensions, zoomIn, zoomOut, applyNodeChanges, screenToFlowCoordinate, getSelectedNodes, nodesSelectionActive } =
+let dragState = null, ignoreClickUntil = 0, rectangleDrag = null;
+const selectionBox=ref(null);
+const { fitView, setCenter, setViewport, viewport, dimensions, zoomIn, zoomOut, applyNodeChanges, screenToFlowCoordinate } =
   useVueFlow(id);
 function toggleRectangle(event) {
   if (!props.editable || !event.target.classList.contains("vue-flow__pane")) return;
@@ -50,19 +52,35 @@ function toggleRectangle(event) {
   slideId.value = null;
   event.currentTarget.focus({ preventScroll: true });
 }
-function finishRectangle() {
-  if (!props.editable || !rectangleMode.value) return;
-  const ids = getSelectedNodes.value.map((node) => node.id);
-  rectangleSelection = new Set(ids);
-  emit("select-many", ids);
-  nodesSelectionActive.value = false;
-  rectangleMode.value = false;
-  ignoreClickUntil = Date.now() + 150;
+function updateRectangle(event) {
+ if(!rectangleDrag || event.pointerId!==rectangleDrag.pointerId) return;
+ rectangleDrag.end={x:event.clientX,y:event.clientY};
+ const rect=rectangleDrag.element.getBoundingClientRect();
+ selectionBox.value=rectangleBounds({x:rectangleDrag.start.x-rect.left,y:rectangleDrag.start.y-rect.top},{x:event.clientX-rect.left,y:event.clientY-rect.top});
+}
+function cancelRectangle() {
+ if(rectangleDrag?.element.hasPointerCapture(rectangleDrag.pointerId)) rectangleDrag.element.releasePointerCapture(rectangleDrag.pointerId);
+ rectangleDrag=null;selectionBox.value=null;
+ window.removeEventListener('pointermove',updateRectangle);window.removeEventListener('pointerup',finishRectangle);window.removeEventListener('pointercancel',cancelRectangle);
+}
+function finishRectangle(event) {
+ if(!rectangleDrag || event.pointerId!==rectangleDrag.pointerId) return;
+ updateRectangle(event);
+ const ids=nodesInRectangle(props.graph.nodes,screenToFlowCoordinate(rectangleDrag.start),screenToFlowCoordinate(rectangleDrag.end));
+ const additive=rectangleDrag.additive;
+ cancelRectangle();emit('select-many',additive ? [...new Set([...props.selectedIds,...ids])]:ids);
+ rectangleMode.value=false;ignoreClickUntil=Date.now()+250;
 }
 let edgeDrag=null,lastEdgeClick=null;
 function beginPointer(event) {
-  rectangleSelection = null;
   if(!props.editable || event.button!==0 || event.target.closest('.vue-flow__edgeupdater')) return;
+  if(rectangleMode.value && event.target.classList.contains('vue-flow__pane')) {
+   event.preventDefault();event.stopPropagation();
+   rectangleDrag={start:{x:event.clientX,y:event.clientY},end:{x:event.clientX,y:event.clientY},pointerId:event.pointerId,element:event.currentTarget,additive:event.ctrlKey||event.metaKey};
+   event.currentTarget.setPointerCapture(event.pointerId);
+   window.addEventListener('pointermove',updateRectangle);window.addEventListener('pointerup',finishRectangle);window.addEventListener('pointercancel',cancelRectangle);
+   return;
+  }
   const group=event.target.closest('.vue-flow__edge'),path=group?.querySelector('.vue-flow__edge-path');
   if(!path) return;
   const location=connectionLocation(event,path);
@@ -101,6 +119,7 @@ function finishEdge(event) {
   } else {lastEdgeClick={id:finished.id,time:Date.now()};emit('select-edge',finished.id);}
 }
 onBeforeUnmount(cancelEdge);
+onBeforeUnmount(cancelRectangle);
 function clickPane() {
   if (Date.now() < ignoreClickUntil) return;
   slideId.value = null;
@@ -295,9 +314,8 @@ function ready() {
 function onChanges(changes) {
   applyNodeChanges(
     changes.filter((c) =>
-      ["dimensions", "position", "select"].includes(c.type),
-    ).map((change) => change.type === "select" && rectangleSelection
-      ? { ...change, selected: rectangleSelection.has(change.id) } : change),
+      ["dimensions", "position"].includes(c.type),
+    ),
   );
 }
 watch(
@@ -310,7 +328,7 @@ defineExpose({ fit, center, initialView });
 </script>
 <template>
   <div class="graph-canvas" :class="{ 'has-pan-sliders': showSliders, 'rectangle-selection-mode': rectangleMode, 'editable-lines': editable, 'presentation-lines': !editable }"
-    tabindex="0" @dblclick="toggleRectangle" @keydown.esc="rectangleMode = false" @pointerdown.capture="beginPointer">
+    tabindex="0" @dblclick="toggleRectangle" @keydown.esc="rectangleMode = false; cancelRectangle()" @pointerdown.capture="beginPointer">
     <VueFlow
       :id="id"
       :nodes="nodes"
@@ -320,7 +338,7 @@ defineExpose({ fit, center, initialView });
       :nodes-connectable="editable"
       :multi-selection-key-code="'Control'"
       :select-nodes-on-drag="false"
-      :selection-key-code="editable && rectangleMode ? true : null"
+      :selection-key-code="null"
       :pan-on-drag="!rectangleMode"
       :selection-mode="SelectionMode.Partial"
       :connection-mode="ConnectionMode.Loose"
@@ -336,7 +354,6 @@ defineExpose({ fit, center, initialView });
       @edge-click="({ edge }) => { if(Date.now()>=ignoreClickUntil) emit('select-edge', edge.id); }"
       @edge-double-click="splitConnection"
       @pane-click="clickPane"
-      @selection-end="finishRectangle"
       @node-drag-start="startDrag"
       @node-drag="dragNode"
       @node-drag-stop="stopDrag"
@@ -351,6 +368,7 @@ defineExpose({ fit, center, initialView });
       <template #node-groupHeading="nodeProps"><GroupHeading v-bind="nodeProps" /></template>
       <template #edge-compact="edgeProps"><CompactEdge v-bind="edgeProps" /></template>
     </VueFlow>
+    <div v-if="selectionBox" class="board-selection-box" :style="{left:selectionBox.x+'px',top:selectionBox.y+'px',width:selectionBox.width+'px',height:selectionBox.height+'px'}" />
     <div class="canvas-view-controls">
       <button v-if="editable" @click="rectangleMode = !rectangleMode; slideId = null" :aria-pressed="rectangleMode"
         title="También puedes hacer doble clic en un espacio vacío para activar la selección rectangular">{{ rectangleMode ? 'Cancelar selección' : 'Seleccionar' }}</button>

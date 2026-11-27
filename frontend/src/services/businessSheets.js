@@ -1,10 +1,12 @@
 import {normalize,graphAncestors} from '../../../shared/graph.js';
 import {companyTheme} from '../../../shared/theme.js';
 import {autoLayout} from './layout.js';
+import {generalBusinessSheet} from './generalBusinessSheet.js';
 export function businessLines(graph) {
  return [...new Set(graph.nodes.filter(n=>n.type==='EMPLOYEE').map(n=>n.metadata?.businessLine).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
 }
 export function businessSheet(graph,line,company='') {
+ if(normalize(line)!=='POST VENTA') return generalBusinessSheet(graph,line,company);
  const people=graph.nodes.filter(n=>n.type==='EMPLOYEE' && normalize(n.metadata?.businessLine)===normalize(line));
  const theme=companyTheme(company),nodes=[],edges=[];
  const id=(kind,value)=>`sheet:${encodeURIComponent(line)}:${kind}:${encodeURIComponent(value)}`;
